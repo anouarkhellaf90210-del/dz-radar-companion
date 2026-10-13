@@ -1,4 +1,4 @@
-name: Build DZ Radar Debug APK
+name: Build DZ Radar Signed Release APK
 
 on:
   push:
@@ -15,6 +15,8 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -22,22 +24,41 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
+    - name: Generate & Lock Persistent Release Keystore
+      run: |
+        if [ ! -f app/dz-radar-release.jks ]; then
+          keytool -genkeypair -v \
+            -keystore app/dz-radar-release.jks \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias dzradar \
+            -storepass dzradar2026 -keypass dzradar2026 \
+            -dname "CN=DZ Radar Companion, OU=Mobile, O=DZStore, L=Mila, ST=Mila, C=DZ"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app/dz-radar-release.jks
+          git commit -m "chore(security): lock permanent release keystore [skip ci]"
+          git push origin HEAD:main
+        fi
+
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
 
-    - name: Generate Wrapper & Build Debug APK
+    - name: Build Signed Release APK
       run: |
         gradle wrapper --gradle-version 8.2
         chmod +x gradlew
-        ./gradlew assembleDebug --no-daemon --stacktrace
+        ./gradlew assembleRelease --no-daemon --stacktrace
+        mkdir -p release-artifacts
+        cp app/build/outputs/apk/release/app-release.apk release-artifacts/app-release.apk
+        cp app/build/outputs/apk/release/app-release.apk release-artifacts/app-debug.apk
 
-    - name: Publish Direct APK Release
+    - name: Publish Signed Release APK
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v1.0.3
-        name: "DZ Radar Companion v1.0.3"
+        tag_name: v1.0.4
+        name: "DZ Radar Companion v1.0.4 (Signed Official Release)"
         draft: false
         prerelease: false
-        files: app/build/outputs/apk/debug/*.apk
+        files: release-artifacts/*.apk
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -9,27 +9,39 @@ android {
 
     defaultConfig {
         applicationId = "com.dzradar.companion"
-        minSdk = 26
+        minSdk = 24
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
+    }
+
+    signingConfigs {
+        create("releaseConfig") {
+            storeFile = file("dz-radar-release.jks")
+            storePassword = System.getenv("KEYSTORE_PASS") ?: "dzradar2026"
+            keyAlias = System.getenv("KEY_ALIAS") ?: "dzradar"
+            keyPassword = System.getenv("KEY_PASS") ?: "dzradar2026"
+            enableV1Signing = true
+            enableV2Signing = true
+        }
     }
 
     buildTypes {
-        debug {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("releaseConfig")
+        }
+        getByName("release") {
             isMinifyEnabled = false
-            applicationIdSuffix = ""
+            signingConfig = signingConfigs.getByName("releaseConfig")
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
     kotlinOptions {
         jvmTarget = "17"
     }
-}
-
-dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
 }
