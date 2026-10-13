@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,8 +31,13 @@ jobs:
         chmod +x gradlew
         ./gradlew assembleDebug --no-daemon --stacktrace
 
-    - name: Upload Debug APK Artifact
-      uses: actions/upload-artifact@v4
+    - name: Publish Direct APK Release
+      uses: softprops/action-gh-release@v2
       with:
-        name: dz-radar-companion-debug
-        path: app/build/outputs/apk/debug/*.apk
+        tag_name: v1.0.0
+        name: "DZ Radar Companion v1.0.0"
+        draft: false
+        prerelease: false
+        files: app/build/outputs/apk/debug/*.apk
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
