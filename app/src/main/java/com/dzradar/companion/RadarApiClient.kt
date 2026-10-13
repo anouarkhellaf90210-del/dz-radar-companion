@@ -21,16 +21,28 @@ data class RadarOrderState(
 )
 
 object RadarApiClient {
-    private const val BASE_URL = "https://my-private-store-app.vercel.app"
-    @Volatile var latestStoreUrl: String = "$BASE_URL/s/dzball"
+    @Volatile var baseOrigin: String = "https://my-private-store-app.vercel.app"
+    @Volatile var latestStoreUrl: String = "https://my-private-store-app.vercel.app/s/dzball"
+
+    fun updateOriginFromStoreUrl(url: String) {
+        if (url.startsWith("http")) {
+            try {
+                val parsed = URL(url)
+                baseOrigin = "${parsed.protocol}://${parsed.host}"
+                if (url.contains("/s/")) {
+                    latestStoreUrl = url.split("?")[0]
+                }
+            } catch (_: Exception) {}
+        }
+    }
 
     fun fetchOrder(token: String, action: String = ""): RadarOrderState? {
         val cleanToken = if (token.isBlank()) "DEMO-TRACK-DZ" else token.trim()
         return try {
             val encodedToken = URLEncoder.encode(cleanToken, "UTF-8")
             val actionParam = if (action.isNotBlank()) "&action=${URLEncoder.encode(action, "UTF-8")}" else ""
-            val url = URL("$BASE_URL/api/orders/track/$encodedToken?_cb=${System.currentTimeMillis()}$actionParam")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
+            val endpoint = "$baseOrigin/api/orders/track/$encodedToken?_cb=${System.currentTimeMillis()}$actionParam"
+            val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 5000
                 readTimeout = 5000
@@ -43,19 +55,19 @@ object RadarApiClient {
                 reader.close()
 
                 val root = JSONObject(response)
-                val orderObj = root.optJSONObject("order") ?: root
+                val orderObj = root.optJSONObject("order") ?: root.optJSONObject("data") ?: root
 
                 val resolvedToken = orderObj.optString("tracking_token", root.optString("tracking_token", cleanToken)).ifBlank { cleanToken }
                 val rawStatus = orderObj.optString("status", root.optString("status", "pending")).lowercase().trim()
                 val slug = orderObj.optString("store_slug", root.optString("store_slug", "dzball")).ifBlank { "dzball" }
-                val sName = orderObj.optString("store_name", root.optString("store_name", "متجر $slug")).ifBlank { "متجر Dzball" }
+                val sName = orderObj.optString("store_name", root.optString("store_name", "متجر Dzball")).ifBlank { "متجر Dzball" }
 
                 val cName = orderObj.optString("customer_name", orderObj.optString("full_name", root.optString("customer_name", "زبون المتجر")))
                 val cPhone = orderObj.optString("customer_phone", orderObj.optString("phone", root.optString("customer_phone", "")))
                 val cWilaya = orderObj.optString("wilaya", orderObj.optString("shipping_wilaya", root.optString("wilaya", "")))
                 val cTotal = orderObj.optString("total_price", orderObj.optString("total_amount", root.optString("total_price", "")))
 
-                val resolvedUrl = "$BASE_URL/s/$slug"
+                val resolvedUrl = "$baseOrigin/s/$slug"
                 latestStoreUrl = resolvedUrl
 
                 val (station, label) = when (rawStatus) {

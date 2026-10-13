@@ -81,9 +81,13 @@ class FloatingBubbleService : Service() {
         val incomingUrl = intent?.getStringExtra("store_url")
         if (!incomingUrl.isNullOrBlank()) {
             targetStoreUrl = incomingUrl
+            RadarApiClient.updateOriginFromStoreUrl(incomingUrl)
             prefs.edit().putString("last_store_url", incomingUrl).apply()
         } else if (targetStoreUrl.isBlank()) {
             targetStoreUrl = prefs.getString("last_store_url", "") ?: ""
+            if (targetStoreUrl.isNotBlank()) {
+                RadarApiClient.updateOriginFromStoreUrl(targetStoreUrl)
+            }
         }
 
         triggerFetch()
@@ -134,6 +138,11 @@ class FloatingBubbleService : Service() {
                             val reader = BufferedReader(InputStreamReader(client.getInputStream()))
                             val reqLine = reader.readLine() ?: ""
 
+                            var headerLine = reader.readLine()
+                            while (!headerLine.isNullOrEmpty()) {
+                                headerLine = reader.readLine()
+                            }
+
                             if (reqLine.contains("/sync")) {
                                 val qStart = reqLine.indexOf("?")
                                 val qEnd = reqLine.indexOf(" HTTP/")
@@ -150,6 +159,7 @@ class FloatingBubbleService : Service() {
                                                 prefs.putString("last_token", v)
                                             } else if (k == "store_url" && v.startsWith("http")) {
                                                 targetStoreUrl = v
+                                                RadarApiClient.updateOriginFromStoreUrl(v)
                                                 prefs.putString("last_store_url", v)
                                             }
                                         }
@@ -160,14 +170,15 @@ class FloatingBubbleService : Service() {
                             }
 
                             val writer = OutputStreamWriter(client.getOutputStream(), "UTF-8")
-                            val body = "{\"active\":true,\"version\":\"1.0.7\",\"token\":\"$trackingToken\"}"
+                            val body = "{\"active\":true,\"version\":\"1.0.8\",\"token\":\"$trackingToken\"}"
+                            val bodyBytes = body.toByteArray(Charsets.UTF_8)
                             writer.write("HTTP/1.1 200 OK\r\n")
                             writer.write("Content-Type: application/json; charset=utf-8\r\n")
                             writer.write("Access-Control-Allow-Origin: *\r\n")
                             writer.write("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n")
                             writer.write("Access-Control-Allow-Headers: *\r\n")
                             writer.write("Access-Control-Allow-Private-Network: true\r\n")
-                            writer.write("Content-Length: ${body.toByteArray().size}\r\n")
+                            writer.write("Content-Length: ${bodyBytes.size}\r\n")
                             writer.write("Connection: close\r\n\r\n")
                             writer.write(body)
                             writer.flush()

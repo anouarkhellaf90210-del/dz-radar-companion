@@ -185,7 +185,6 @@ class RadarOverlayView(
             stepperRow.addView(stepChip)
         }
         cardContainer.addView(stepperRow)
-        updateStepperStyle(1)
 
         customerConfirmBtn = TextView(context).apply {
             text = "✅ تأكيد استلامي للطلب الآن"
@@ -271,7 +270,7 @@ class RadarOverlayView(
             setPadding(dp(8), dp(6), dp(8), dp(6))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             setOnClickListener {
-                merchantAdvanceBtn.text = "⏳ جاري التحديث..."
+                text = "⏳ جاري التحديث..."
                 onMerchantAdvance()
             }
         }
@@ -316,6 +315,8 @@ class RadarOverlayView(
         rootLayout.addView(bubbleContainer)
         rootLayout.addView(cardContainer)
         addView(rootLayout)
+
+        updateStepperStyle(1)
     }
 
     private fun updateStepperStyle(activeStation: Int) {
