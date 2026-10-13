@@ -34,7 +34,7 @@ class RadarOverlayView(
             background = bg
 
             val icon = TextView(context).apply {
-                text = "⚡"
+                text = "🚚"
                 textSize = 15f
                 gravity = Gravity.CENTER
                 layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)

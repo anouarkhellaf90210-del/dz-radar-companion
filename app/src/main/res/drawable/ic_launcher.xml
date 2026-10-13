@@ -1,0 +1,82 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- خلفية الدائرة الداكنة بنمط الأوبسيديان الملكي -->
+    <path
+        android:fillColor="#09090B"
+        android:pathData="M54,54m-48,0a48,48 0,1 1,96 0a48,48 0,1 1,-96 0" />
+
+    <!-- حلقة التوهج الزمردية النيون الخارجية -->
+    <path
+        android:strokeColor="#10B981"
+        android:strokeWidth="4.5"
+        android:pathData="M54,54m-44,0a44,44 0,1 1,88 0a44,44 0,1 1,-88 0" />
+
+    <!-- هالة إشعاع زمردية داخلية ناعمة -->
+    <path
+        android:strokeColor="#047857"
+        android:strokeWidth="1.5"
+        android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0" />
+
+    <!-- خطوط السرعة والانسيابية الهوائية خلف الشاحنة -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M23,45h14c0.8,0 1.5,-0.7 1.5,-1.5s-0.7,-1.5 -1.5,-1.5H23c-0.8,0 -1.5,0.7 -1.5,1.5s0.7,1.5 1.5,1.5z" />
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M19,53h12c0.8,0 1.5,-0.7 1.5,-1.5s-0.7,-1.5 -1.5,-1.5H19c-0.8,0 -1.5,0.7 -1.5,1.5s0.7,1.5 1.5,1.5z" />
+    <path
+        android:fillColor="#059669"
+        android:pathData="M24,61h10c0.8,0 1.5,-0.7 1.5,-1.5s-0.7,-1.5 -1.5,-1.5H24c-0.8,0 -1.5,0.7 -1.5,1.5s0.7,1.5 1.5,1.5z" />
+
+    <!-- جسم الشاحنة الأبيض الناصع الانسيابي -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M37,39h26c2.2,0 4,1.8 4,4v20H37c-1.1,0 -2,-0.9 -2,-2V41c0,-1.1 0.9,-2 2,-2z" />
+
+    <!-- مقصورة القيادة الهجومية والديناميكية -->
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M67,46h8.5c1.4,0 2.7,0.7 3.4,1.9l5.6,8.7c0.6,0.9 0.9,2 0.9,3.1V63H67V46z" />
+
+    <!-- زجاج المقصورة الأمامي الزمردي المتألق -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M69,48.5h6.2c0.8,0 1.6,0.4 2,1.1l4,6.4H69V48.5z" />
+
+    <!-- المصابيح الأمامية المضيئة -->
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M83.5,59.5h2c0.6,0 1,0.4 1,1v1.5c0,0.6 -0.4,1 -1,1h-2V59.5z" />
+
+    <!-- خط فاصل لكابينة الشحن -->
+    <path
+        android:strokeColor="#E2E8F0"
+        android:strokeWidth="1.2"
+        android:pathData="M48,39v24" />
+
+    <!-- العجلة الخلفية -->
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M46,63m-7.5,0a7.5,7.5 0,1 1,15 0a7.5,7.5 0,1 1,-15 0" />
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M46,63m-3.5,0a3.5,3.5 0,1 1,7 0a3.5,3.5 0,1 1,-7 0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M46,63m-1.2,0a1.2,1.2 0,1 1,2.4 0a1.2,1.2 0,1 1,-2.4 0" />
+
+    <!-- العجلة الأمامية -->
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M74,63m-7.5,0a7.5,7.5 0,1 1,15 0a7.5,7.5 0,1 1,-15 0" />
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M74,63m-3.5,0a3.5,3.5 0,1 1,7 0a3.5,3.5 0,1 1,-7 0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M74,63m-1.2,0a1.2,1.2 0,1 1,2.4 0a1.2,1.2 0,1 1,-2.4 0" />
+</vector>
