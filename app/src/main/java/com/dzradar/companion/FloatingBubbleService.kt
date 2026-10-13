@@ -68,6 +68,7 @@ class FloatingBubbleService : Service() {
         val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
+            @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
@@ -102,6 +103,10 @@ class FloatingBubbleService : Service() {
         var initialTouchY = 0f
 
         overlayView?.bubbleContainer?.setOnTouchListener { _, event ->
+            val displayMetrics = resources.displayMetrics
+            val screenWidth = displayMetrics.widthPixels
+            val screenHeight = displayMetrics.heightPixels
+
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = params.x
@@ -112,21 +117,25 @@ class FloatingBubbleService : Service() {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - initialTouchX).toInt()
-                    params.y = initialY + (event.rawY - initialTouchY).toInt()
+                    val newX = initialX + (event.rawX - initialTouchX).toInt()
+                    val newY = initialY + (event.rawY - initialTouchY).toInt()
+
+                    val maxX = (screenWidth - sizePx).coerceAtLeast(0)
+                    val maxY = (screenHeight - sizePx).coerceAtLeast(0)
+
+                    params.x = newX.coerceIn(0, maxX)
+                    params.y = newY.coerceIn(0, maxY)
+
                     windowManager?.updateViewLayout(overlayView, params)
                     true
                 }
                 MotionEvent.ACTION_UP -> {
                     val diffX = abs(event.rawX - initialTouchX)
                     val diffY = abs(event.rawY - initialTouchY)
+
                     if (diffX < 12 && diffY < 12) {
                         val isOpen = overlayView?.isCardOpen() ?: false
                         overlayView?.toggleCard(!isOpen)
-                    } else {
-                        val screenWidth = resources.displayMetrics.widthPixels
-                        params.x = if (params.x < screenWidth / 2) 16 else screenWidth - sizePx - 16
-                        windowManager?.updateViewLayout(overlayView, params)
                     }
                     true
                 }
@@ -160,7 +169,7 @@ class FloatingBubbleService : Service() {
         handler.removeCallbacks(pollingRunnable)
         try {
             unregisterReceiver(screenReceiver)
-        } catch (e: Exception) {}
+        } catch (_: Exception) {}
         if (overlayView != null) {
             windowManager?.removeView(overlayView)
         }
