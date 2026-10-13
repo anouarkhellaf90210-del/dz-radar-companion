@@ -25,7 +25,6 @@ class MainActivity : Activity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var isWatchingPermission = false
-    private lateinit var statusBadge: TextView
     private lateinit var step1Card: LinearLayout
     private lateinit var primaryActionBtn: Button
 
@@ -44,9 +43,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        captureDeepLinkToken(intent)
+        captureDeepLinkParams(intent)
 
-        // إذا كان الإذن ممنوحاً مسبقاً، أطلق الفقاعة فوراً دون إزعاج الزبون بأي شاشة
         if (hasOverlayPermission()) {
             startBubbleAndFinish()
             return
@@ -57,7 +55,7 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        captureDeepLinkToken(intent)
+        captureDeepLinkParams(intent)
         if (hasOverlayPermission()) {
             startBubbleAndFinish()
         }
@@ -77,19 +75,36 @@ class MainActivity : Activity() {
         handler.removeCallbacks(permissionWatcher)
     }
 
-    private fun captureDeepLinkToken(intent: Intent?) {
-        val token = intent?.data?.getQueryParameter("token")
+    private fun captureDeepLinkParams(intent: Intent?) {
+        val data = intent?.data ?: return
+        val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE).edit()
+
+        val token = data.getQueryParameter("token")
         if (!token.isNullOrBlank()) {
-            getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
-                .edit()
-                .putString("last_token", token.trim())
-                .apply()
+            prefs.putString("last_token", token.trim())
         }
+
+        val storeUrl = data.getQueryParameter("store_url")
+        if (!storeUrl.isNullOrBlank()) {
+            prefs.putString("last_store_url", storeUrl.trim())
+        }
+
+        val slug = data.getQueryParameter("slug")
+        if (!slug.isNullOrBlank()) {
+            prefs.putString("last_store_url", "https://my-private-store-app.vercel.app/s/${slug.trim()}")
+        }
+
+        prefs.apply()
     }
 
     private fun getSavedToken(): String {
         return getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
             .getString("last_token", "DEMO-TRACK-DZ") ?: "DEMO-TRACK-DZ"
+    }
+
+    private fun getSavedStoreUrl(): String {
+        return getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
+            .getString("last_store_url", "") ?: ""
     }
 
     private fun hasOverlayPermission(): Boolean {
@@ -103,6 +118,7 @@ class MainActivity : Activity() {
     private fun startBubbleAndFinish() {
         val serviceIntent = Intent(this, FloatingBubbleService::class.java).apply {
             putExtra("token", getSavedToken())
+            putExtra("store_url", getSavedStoreUrl())
         }
         startService(serviceIntent)
         finish()
@@ -137,7 +153,6 @@ class MainActivity : Activity() {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
 
-        // 1. شعار الشاحنة الدائري المتوهج
         val logoBadge = TextView(this).apply {
             text = "🚚"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 38f)
@@ -153,7 +168,6 @@ class MainActivity : Activity() {
         }
         root.addView(logoBadge)
 
-        // 2. العنوان الرئيسي المطمئن
         val title = TextView(this).apply {
             text = "رادار تتبع الطرد المباشر"
             setTextColor(Color.WHITE)
@@ -178,7 +192,6 @@ class MainActivity : Activity() {
         }
         root.addView(subtitle)
 
-        // 3. درع الضمان الأمني والخصوصية (يزيل خوف الزبون تماماً)
         val trustShield = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = makeCardBg("#052E16", "#10B981", 16)
@@ -213,7 +226,6 @@ class MainActivity : Activity() {
         trustShield.addView(shieldBody)
         root.addView(trustShield)
 
-        // 4. بطاقة الخطوة الأولى (مخصصة لأندرويد 13 فما فوق لفك القيد الاحترازي بسهولة)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             step1Card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -276,7 +288,6 @@ class MainActivity : Activity() {
             root.addView(step1Card)
         }
 
-        // 5. بطاقة الخطوة الثانية (تفعيل الفقاعة والانطلاق الفوري التلقائي)
         val step2Card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = makeCardBg("#18181B", "#10B981", 16)

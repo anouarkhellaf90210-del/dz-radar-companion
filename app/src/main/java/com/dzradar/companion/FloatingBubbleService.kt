@@ -22,6 +22,7 @@ class FloatingBubbleService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayView: RadarOverlayView? = null
     private var trackingToken: String = ""
+    private var targetStoreUrl: String = ""
     private val handler = Handler(Looper.getMainLooper())
     private var isScreenOn = true
 
@@ -48,13 +49,41 @@ class FloatingBubbleService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        intent?.getStringExtra("token")?.let {
-            if (it.isNotBlank()) {
-                trackingToken = it
-                triggerFetch()
-            }
+        val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
+
+        val incomingToken = intent?.getStringExtra("token")
+        if (!incomingToken.isNullOrBlank()) {
+            trackingToken = incomingToken
+            prefs.edit().putString("last_token", incomingToken).apply()
+        } else if (trackingToken.isBlank()) {
+            trackingToken = prefs.getString("last_token", "") ?: ""
         }
+
+        val incomingUrl = intent?.getStringExtra("store_url")
+        if (!incomingUrl.isNullOrBlank()) {
+            targetStoreUrl = incomingUrl
+            prefs.edit().putString("last_store_url", incomingUrl).apply()
+        } else if (targetStoreUrl.isBlank()) {
+            targetStoreUrl = prefs.getString("last_store_url", "") ?: ""
+        }
+
+        triggerFetch()
         return START_STICKY
+    }
+
+    private fun resolveDestinationUrl(): String {
+        if (targetStoreUrl.isNotBlank() && targetStoreUrl.startsWith("http")) {
+            return targetStoreUrl
+        }
+        val savedUrl = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
+            .getString("last_store_url", "") ?: ""
+        if (savedUrl.isNotBlank() && savedUrl.startsWith("http")) {
+            return savedUrl
+        }
+        if (trackingToken.isNotBlank() && trackingToken != "DEMO-TRACK-DZ") {
+            return "https://my-private-store-app.vercel.app/track/${Uri.encode(trackingToken)}"
+        }
+        return "https://my-private-store-app.vercel.app"
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -87,7 +116,9 @@ class FloatingBubbleService : Service() {
         overlayView = RadarOverlayView(
             this,
             onOpenStore = {
-                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://my-private-store-app.vercel.app")).apply {
+                overlayView?.toggleCard(false)
+                val destUrl = resolveDestinationUrl()
+                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(destUrl)).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 startActivity(browserIntent)
