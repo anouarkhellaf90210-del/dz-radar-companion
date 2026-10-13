@@ -42,7 +42,7 @@ class FloatingBubbleService : Service() {
             if (isScreenOn && trackingToken.isNotBlank()) {
                 triggerFetch()
             }
-            handler.postDelayed(this, 30000)
+            handler.postDelayed(this, 5000)
         }
     }
 
@@ -83,7 +83,7 @@ class FloatingBubbleService : Service() {
         if (trackingToken.isNotBlank() && trackingToken != "DEMO-TRACK-DZ") {
             return "https://my-private-store-app.vercel.app/track/${Uri.encode(trackingToken)}"
         }
-        return "https://my-private-store-app.vercel.app"
+        return RadarApiClient.latestStoreUrl
     }
 
     @SuppressLint("ClickableViewAccessibility")

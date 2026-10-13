@@ -6,54 +6,50 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 
-data class RadarOrderData(
+data class RadarOrderState(
     val station: Int,
-    val status: String,
-    val wilaya: String,
-    val commune: String
+    val statusLabel: String,
+    val storeName: String,
+    val storeUrl: String
 )
 
 object RadarApiClient {
-    private var lastModifiedHeader: String? = null
+    private const val BASE_URL = "https://my-private-store-app.vercel.app"
+    @Volatile var latestStoreUrl: String = "$BASE_URL/s/dzball"
 
-    fun fetchOrder(token: String): RadarOrderData? {
-        if (token.isBlank()) return null
+    fun fetchOrder(token: String): RadarOrderState? {
+        val cleanToken = if (token.isBlank()) "DEMO-TRACK-DZ" else token.trim()
         return try {
-            val endpoint = "https://my-private-store-app.vercel.app/api/orders/track/$token"
-            val url = URL(endpoint)
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "GET"
-            conn.connectTimeout = 8000
-            conn.readTimeout = 8000
-
-            lastModifiedHeader?.let {
-                conn.setRequestProperty("If-Modified-Since", it)
+            val url = URL("$BASE_URL/api/orders/track/$cleanToken?_cb=${System.currentTimeMillis()}")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 5000
+                readTimeout = 5000
+                setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
             }
 
-            if (conn.responseCode == HttpURLConnection.HTTP_NOT_MODIFIED) {
-                return null
-            }
-
-            if (conn.responseCode == HttpURLConnection.HTTP_OK) {
-                lastModifiedHeader = conn.getHeaderField("Last-Modified")
+            if (conn.responseCode == 200) {
                 val reader = BufferedReader(InputStreamReader(conn.inputStream))
                 val response = reader.readText()
                 reader.close()
 
-                val json = JSONObject(response)
-                val order = json.optJSONObject("order") ?: return null
-                val status = order.optString("status", "new")
-                val wilaya = order.optString("wilaya", "")
-                val commune = order.optString("commune", "")
+                val root = JSONObject(response)
+                val orderObj = root.optJSONObject("order") ?: root
+                val rawStatus = orderObj.optString("status", "pending").lowercase().trim()
+                val slug = orderObj.optString("store_slug", root.optString("store_slug", "dzball")).ifBlank { "dzball" }
+                val sName = orderObj.optString("store_name", root.optString("store_name", "تتبع مباشر من المتجر")).ifBlank { "تتبع مباشر من المتجر" }
 
-                val station = when (status.lowercase()) {
-                    "delivered", "completed", "received", "paid" -> 4
-                    "out_for_delivery", "shipped", "in_transit", "dispatched", "with_courier", "delivering" -> 3
-                    "confirmed", "processing", "preparing", "packaged", "ready_for_dispatch", "ready_to_ship", "assigned" -> 2
-                    else -> 1
+                val resolvedUrl = "$BASE_URL/s/$slug"
+                latestStoreUrl = resolvedUrl
+
+                val (station, label) = when (rawStatus) {
+                    "delivered", "completed", "received", "paid" -> 4 to "طردك: تم التسليم 🤝"
+                    "out_for_delivery", "shipped", "in_transit", "dispatched", "with_courier", "delivering" -> 3 to "طردك: في الطريق إليك 🚚"
+                    "confirmed", "processing", "preparing", "packaged", "ready_for_dispatch", "ready_to_ship", "assigned" -> 2 to "طردك: قيد التجهيز 📦"
+                    else -> 1 to "طردك: مُستلم ⚡"
                 }
 
-                RadarOrderData(station, status, wilaya, commune)
+                RadarOrderState(station, label, sName, resolvedUrl)
             } else {
                 null
             }
