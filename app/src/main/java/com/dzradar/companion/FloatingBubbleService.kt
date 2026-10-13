@@ -19,22 +19,21 @@ import android.os.Vibrator
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
-import android.widget.Toast
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.URLDecoder
-import kotlin.math.abs
+import kotlin.math.hypot
 
 class FloatingBubbleService : Service() {
 
     private var windowManager: WindowManager? = null
     private var overlayView: RadarOverlayView? = null
-    private var trackingToken: String = ""
+    private var trackingToken: String = "SENTINEL-IDLE"
     private var targetStoreUrl: String = ""
-    private var lastKnownStation: Int = -1
+    private var lastKnownStation: Int = 0
     private var localServer: ServerSocket? = null
     @Volatile private var isRunning = true
 
@@ -61,7 +60,7 @@ class FloatingBubbleService : Service() {
             if (isScreenOn) {
                 triggerFetch()
             }
-            handler.postDelayed(this, 4500)
+            handler.postDelayed(this, 4000)
         }
     }
 
@@ -71,18 +70,21 @@ class FloatingBubbleService : Service() {
         val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
 
         val incomingToken = intent?.getStringExtra("token")
-        if (!incomingToken.isNullOrBlank()) {
-            trackingToken = incomingToken
-            prefs.edit().putString("last_token", incomingToken).apply()
-        } else if (trackingToken.isBlank()) {
-            trackingToken = prefs.getString("last_token", "DEMO-TRACK-DZ") ?: "DEMO-TRACK-DZ"
+        if (!incomingToken.isNullOrBlank() && incomingToken != "DEMO-TRACK-DZ") {
+            trackingToken = incomingToken.trim()
+            prefs.edit().putString("last_token", trackingToken).apply()
+        } else if (trackingToken == "SENTINEL-IDLE") {
+            val saved = prefs.getString("last_token", "SENTINEL-IDLE") ?: "SENTINEL-IDLE"
+            if (saved != "DEMO-TRACK-DZ") {
+                trackingToken = saved
+            }
         }
 
         val incomingUrl = intent?.getStringExtra("store_url")
         if (!incomingUrl.isNullOrBlank()) {
-            targetStoreUrl = incomingUrl
-            RadarApiClient.updateOriginFromStoreUrl(incomingUrl)
-            prefs.edit().putString("last_store_url", incomingUrl).apply()
+            targetStoreUrl = incomingUrl.trim()
+            RadarApiClient.updateOriginFromStoreUrl(targetStoreUrl)
+            prefs.edit().putString("last_store_url", targetStoreUrl).apply()
         } else if (targetStoreUrl.isBlank()) {
             targetStoreUrl = prefs.getString("last_store_url", "") ?: ""
             if (targetStoreUrl.isNotBlank()) {
@@ -106,23 +108,35 @@ class FloatingBubbleService : Service() {
         return RadarApiClient.latestStoreUrl
     }
 
-    private fun playSensoryAlert() {
+    private fun playMicroTapHaptic() {
         try {
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 80, 60, 110), -1))
+                vibrator?.vibrate(VibrationEffect.createOneShot(15, VibrationEffect.DEFAULT_AMPLITUDE))
             } else {
                 @Suppress("DEPRECATION")
-                vibrator?.vibrate(180)
+                vibrator?.vibrate(15)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun playStationTransitionAlert() {
+        try {
+            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 60, 50, 90), -1))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(140)
             }
         } catch (_: Exception) {}
 
         try {
-            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
-            toneGen.startTone(ToneGenerator.TONE_PROP_ACK, 220)
+            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 75)
+            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 180)
             handler.postDelayed({
                 try { toneGen.release() } catch (_: Exception) {}
-            }, 300)
+            }, 250)
         } catch (_: Exception) {}
     }
 
@@ -154,13 +168,13 @@ class FloatingBubbleService : Service() {
                                         if (kv.size == 2) {
                                             val k = URLDecoder.decode(kv[0], "UTF-8")
                                             val v = URLDecoder.decode(kv[1], "UTF-8")
-                                            if (k == "token" && v.isNotBlank()) {
-                                                trackingToken = v
-                                                prefs.putString("last_token", v)
+                                            if (k == "token" && v.isNotBlank() && v != "ACTIVE-ORDER" && v != "DEMO-TRACK-DZ") {
+                                                trackingToken = v.trim()
+                                                prefs.putString("last_token", trackingToken)
                                             } else if (k == "store_url" && v.startsWith("http")) {
-                                                targetStoreUrl = v
-                                                RadarApiClient.updateOriginFromStoreUrl(v)
-                                                prefs.putString("last_store_url", v)
+                                                targetStoreUrl = v.trim()
+                                                RadarApiClient.updateOriginFromStoreUrl(targetStoreUrl)
+                                                prefs.putString("last_store_url", targetStoreUrl)
                                             }
                                         }
                                     }
@@ -170,7 +184,7 @@ class FloatingBubbleService : Service() {
                             }
 
                             val writer = OutputStreamWriter(client.getOutputStream(), "UTF-8")
-                            val body = "{\"active\":true,\"version\":\"1.0.8\",\"token\":\"$trackingToken\"}"
+                            val body = "{\"active\":true,\"version\":\"1.0.9\",\"token\":\"$trackingToken\",\"station\":$lastKnownStation}"
                             val bodyBytes = body.toByteArray(Charsets.UTF_8)
                             writer.write("HTTP/1.1 200 OK\r\n")
                             writer.write("Content-Type: application/json; charset=utf-8\r\n")
@@ -198,7 +212,8 @@ class FloatingBubbleService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         val density = resources.displayMetrics.density
-        val sizePx = (40 * density).toInt()
+        val sizePx = (44 * density).toInt()
+        val tapSlopPx = 5f * density // Strict < 5dp movement threshold for Instant 1-Tap
 
         val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -231,23 +246,6 @@ class FloatingBubbleService : Service() {
             },
             onCloseCompanion = {
                 stopSelf()
-            },
-            onConfirmOrder = {
-                triggerFetch(action = "confirm")
-            },
-            onCallCustomer = { phone ->
-                overlayView?.toggleCard(false)
-                if (phone.isNotBlank()) {
-                    val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    startActivity(dialIntent)
-                } else {
-                    Toast.makeText(this, "رقم هاتف الزبون غير متوفر", Toast.LENGTH_SHORT).show()
-                }
-            },
-            onMerchantAdvance = {
-                triggerFetch(action = "advance")
             }
         )
 
@@ -272,23 +270,28 @@ class FloatingBubbleService : Service() {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val newX = initialX + (event.rawX - initialTouchX).toInt()
-                    val newY = initialY + (event.rawY - initialTouchY).toInt()
+                    val dx = event.rawX - initialTouchX
+                    val dy = event.rawY - initialTouchY
+                    if (hypot(dx.toDouble(), dy.toDouble()) >= tapSlopPx) {
+                        val newX = initialX + dx.toInt()
+                        val newY = initialY + dy.toInt()
 
-                    val maxX = (screenWidth - sizePx).coerceAtLeast(0)
-                    val maxY = (screenHeight - sizePx).coerceAtLeast(0)
+                        val maxX = (screenWidth - sizePx).coerceAtLeast(0)
+                        val maxY = (screenHeight - sizePx).coerceAtLeast(0)
 
-                    params.x = newX.coerceIn(0, maxX)
-                    params.y = newY.coerceIn(0, maxY)
+                        params.x = newX.coerceIn(0, maxX)
+                        params.y = newY.coerceIn(0, maxY)
 
-                    windowManager?.updateViewLayout(overlayView, params)
+                        windowManager?.updateViewLayout(overlayView, params)
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    val diffX = abs(event.rawX - initialTouchX)
-                    val diffY = abs(event.rawY - initialTouchY)
+                    val dx = event.rawX - initialTouchX
+                    val dy = event.rawY - initialTouchY
 
-                    if (diffX < 12 && diffY < 12) {
+                    if (hypot(dx.toDouble(), dy.toDouble()) < tapSlopPx) {
+                        playMicroTapHaptic()
                         val isOpen = overlayView?.isCardOpen() ?: false
                         overlayView?.toggleCard(!isOpen)
                     }
@@ -310,24 +313,21 @@ class FloatingBubbleService : Service() {
         handler.post(pollingRunnable)
     }
 
-    private fun triggerFetch(action: String = "") {
+    private fun triggerFetch() {
+        if (trackingToken.isBlank() || trackingToken == "SENTINEL-IDLE") return
         Thread {
-            val data = RadarApiClient.fetchOrder(trackingToken, action)
+            val data = RadarApiClient.fetchOrder(trackingToken)
             if (data != null) {
-                if (data.trackingToken.isNotBlank() && data.trackingToken != "DEMO-TRACK-DZ") {
+                if (data.trackingToken.isNotBlank()) {
                     trackingToken = data.trackingToken
                 }
                 val prevStation = lastKnownStation
-                if (prevStation != -1 && prevStation != data.station) {
+                if (prevStation != 0 && prevStation != data.station) {
                     handler.post {
-                        playSensoryAlert()
+                        playStationTransitionAlert()
                         overlayView?.toggleCard(true)
                         handler.removeCallbacks(autoCollapseRunnable)
                         handler.postDelayed(autoCollapseRunnable, 4500)
-                    }
-                } else if (action.isNotBlank()) {
-                    handler.post {
-                        playSensoryAlert()
                     }
                 }
                 lastKnownStation = data.station

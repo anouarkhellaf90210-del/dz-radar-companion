@@ -10,14 +10,10 @@ import java.net.URLEncoder
 data class RadarOrderState(
     val trackingToken: String,
     val station: Int,
-    val statusRaw: String,
-    val statusLabel: String,
+    val statusTitle: String,
+    val statusSubtitle: String,
     val storeName: String,
-    val storeUrl: String,
-    val customerName: String = "",
-    val customerPhone: String = "",
-    val wilaya: String = "",
-    val totalPrice: String = ""
+    val storeUrl: String
 )
 
 object RadarApiClient {
@@ -36,12 +32,12 @@ object RadarApiClient {
         }
     }
 
-    fun fetchOrder(token: String, action: String = ""): RadarOrderState? {
-        val cleanToken = if (token.isBlank()) "DEMO-TRACK-DZ" else token.trim()
+    fun fetchOrder(token: String): RadarOrderState? {
+        if (token.isBlank() || token == "SENTINEL-IDLE") return null
         return try {
+            val cleanToken = token.trim()
             val encodedToken = URLEncoder.encode(cleanToken, "UTF-8")
-            val actionParam = if (action.isNotBlank()) "&action=${URLEncoder.encode(action, "UTF-8")}" else ""
-            val endpoint = "$baseOrigin/api/orders/track/$encodedToken?_cb=${System.currentTimeMillis()}$actionParam"
+            val endpoint = "$baseOrigin/api/orders/track/$encodedToken?_cb=${System.currentTimeMillis()}"
             val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 5000
@@ -60,34 +56,32 @@ object RadarApiClient {
                 val resolvedToken = orderObj.optString("tracking_token", root.optString("tracking_token", cleanToken)).ifBlank { cleanToken }
                 val rawStatus = orderObj.optString("status", root.optString("status", "pending")).lowercase().trim()
                 val slug = orderObj.optString("store_slug", root.optString("store_slug", "dzball")).ifBlank { "dzball" }
-                val sName = orderObj.optString("store_name", root.optString("store_name", "متجر Dzball")).ifBlank { "متجر Dzball" }
-
-                val cName = orderObj.optString("customer_name", orderObj.optString("full_name", root.optString("customer_name", "زبون المتجر")))
-                val cPhone = orderObj.optString("customer_phone", orderObj.optString("phone", root.optString("customer_phone", "")))
-                val cWilaya = orderObj.optString("wilaya", orderObj.optString("shipping_wilaya", root.optString("wilaya", "")))
-                val cTotal = orderObj.optString("total_price", orderObj.optString("total_amount", root.optString("total_price", "")))
+                val sName = orderObj.optString("store_name", root.optString("store_name", "متجر $slug")).ifBlank { "متجر Dzball" }
 
                 val resolvedUrl = "$baseOrigin/s/$slug"
                 latestStoreUrl = resolvedUrl
 
-                val (station, label) = when (rawStatus) {
-                    "delivered", "completed", "received", "paid" -> 4 to "طردك: تم التسليم بنجاح 🤝"
-                    "out_for_delivery", "shipped", "in_transit", "dispatched", "with_courier", "delivering" -> 3 to "طردك: في الطريق إليك 🚚"
-                    "confirmed", "processing", "preparing", "packaged", "ready_for_dispatch", "ready_to_ship", "assigned" -> 2 to "طردك: مؤكد وقيد التجهيز 📦"
-                    else -> 1 to "طردك: مُستلم ⚡"
+                val station = when (rawStatus) {
+                    "delivered", "completed", "received", "paid" -> 4
+                    "out_for_delivery", "shipped", "in_transit", "dispatched", "with_courier", "delivering" -> 3
+                    "confirmed", "processing", "preparing", "packaged", "ready_for_dispatch", "ready_to_ship", "assigned" -> 2
+                    else -> 1
+                }
+
+                val (title, subtitle) = when (station) {
+                    4 -> "تم التسليم بنجاح" to "وصل طردك بأمان، تتهنى به!"
+                    3 -> "خرج للتوصيل" to "طردك الآن في مركبة التوصيل متجه إليك"
+                    2 -> "تم التأكيد والتجهيز" to "تم توثيق طلبك ويجري تغليفه بعناية"
+                    else -> "قيد التأكيد والمراجعة" to "تم تسجيل طلبك وهو قيد المراجعة"
                 }
 
                 RadarOrderState(
                     trackingToken = resolvedToken,
                     station = station,
-                    statusRaw = rawStatus,
-                    statusLabel = label,
+                    statusTitle = title,
+                    statusSubtitle = subtitle,
                     storeName = sName,
-                    storeUrl = resolvedUrl,
-                    customerName = cName,
-                    customerPhone = cPhone,
-                    wilaya = cWilaya,
-                    totalPrice = cTotal
+                    storeUrl = resolvedUrl
                 )
             } else {
                 null

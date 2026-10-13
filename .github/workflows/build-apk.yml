@@ -55,8 +55,8 @@ jobs:
     - name: Publish Signed Release APK
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v1.0.8
-        name: "DZ Radar Companion v1.0.8 (Signed Official Release)"
+        tag_name: v1.0.9
+        name: "DZ Radar Companion v1.0.9 (Signed Official Release)"
         draft: false
         prerelease: false
         files: release-artifacts/*.apk
