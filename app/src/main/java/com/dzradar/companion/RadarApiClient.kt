@@ -5,22 +5,31 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 
 data class RadarOrderState(
+    val trackingToken: String,
     val station: Int,
+    val statusRaw: String,
     val statusLabel: String,
     val storeName: String,
-    val storeUrl: String
+    val storeUrl: String,
+    val customerName: String = "",
+    val customerPhone: String = "",
+    val wilaya: String = "",
+    val totalPrice: String = ""
 )
 
 object RadarApiClient {
     private const val BASE_URL = "https://my-private-store-app.vercel.app"
     @Volatile var latestStoreUrl: String = "$BASE_URL/s/dzball"
 
-    fun fetchOrder(token: String): RadarOrderState? {
+    fun fetchOrder(token: String, action: String = ""): RadarOrderState? {
         val cleanToken = if (token.isBlank()) "DEMO-TRACK-DZ" else token.trim()
         return try {
-            val url = URL("$BASE_URL/api/orders/track/$cleanToken?_cb=${System.currentTimeMillis()}")
+            val encodedToken = URLEncoder.encode(cleanToken, "UTF-8")
+            val actionParam = if (action.isNotBlank()) "&action=${URLEncoder.encode(action, "UTF-8")}" else ""
+            val url = URL("$BASE_URL/api/orders/track/$encodedToken?_cb=${System.currentTimeMillis()}$actionParam")
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 5000
@@ -35,21 +44,39 @@ object RadarApiClient {
 
                 val root = JSONObject(response)
                 val orderObj = root.optJSONObject("order") ?: root
-                val rawStatus = orderObj.optString("status", "pending").lowercase().trim()
+
+                val resolvedToken = orderObj.optString("tracking_token", root.optString("tracking_token", cleanToken)).ifBlank { cleanToken }
+                val rawStatus = orderObj.optString("status", root.optString("status", "pending")).lowercase().trim()
                 val slug = orderObj.optString("store_slug", root.optString("store_slug", "dzball")).ifBlank { "dzball" }
-                val sName = orderObj.optString("store_name", root.optString("store_name", "تتبع مباشر من المتجر")).ifBlank { "تتبع مباشر من المتجر" }
+                val sName = orderObj.optString("store_name", root.optString("store_name", "متجر $slug")).ifBlank { "متجر Dzball" }
+
+                val cName = orderObj.optString("customer_name", orderObj.optString("full_name", root.optString("customer_name", "زبون المتجر")))
+                val cPhone = orderObj.optString("customer_phone", orderObj.optString("phone", root.optString("customer_phone", "")))
+                val cWilaya = orderObj.optString("wilaya", orderObj.optString("shipping_wilaya", root.optString("wilaya", "")))
+                val cTotal = orderObj.optString("total_price", orderObj.optString("total_amount", root.optString("total_price", "")))
 
                 val resolvedUrl = "$BASE_URL/s/$slug"
                 latestStoreUrl = resolvedUrl
 
                 val (station, label) = when (rawStatus) {
-                    "delivered", "completed", "received", "paid" -> 4 to "طردك: تم التسليم 🤝"
+                    "delivered", "completed", "received", "paid" -> 4 to "طردك: تم التسليم بنجاح 🤝"
                     "out_for_delivery", "shipped", "in_transit", "dispatched", "with_courier", "delivering" -> 3 to "طردك: في الطريق إليك 🚚"
-                    "confirmed", "processing", "preparing", "packaged", "ready_for_dispatch", "ready_to_ship", "assigned" -> 2 to "طردك: قيد التجهيز 📦"
+                    "confirmed", "processing", "preparing", "packaged", "ready_for_dispatch", "ready_to_ship", "assigned" -> 2 to "طردك: مؤكد وقيد التجهيز 📦"
                     else -> 1 to "طردك: مُستلم ⚡"
                 }
 
-                RadarOrderState(station, label, sName, resolvedUrl)
+                RadarOrderState(
+                    trackingToken = resolvedToken,
+                    station = station,
+                    statusRaw = rawStatus,
+                    statusLabel = label,
+                    storeName = sName,
+                    storeUrl = resolvedUrl,
+                    customerName = cName,
+                    customerPhone = cPhone,
+                    wilaya = cWilaya,
+                    totalPrice = cTotal
+                )
             } else {
                 null
             }

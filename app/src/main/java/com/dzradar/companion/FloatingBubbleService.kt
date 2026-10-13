@@ -7,14 +7,25 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.PixelFormat
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
+import android.widget.Toast
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.URLDecoder
 import kotlin.math.abs
 
 class FloatingBubbleService : Service() {
@@ -23,8 +34,16 @@ class FloatingBubbleService : Service() {
     private var overlayView: RadarOverlayView? = null
     private var trackingToken: String = ""
     private var targetStoreUrl: String = ""
+    private var lastKnownStation: Int = -1
+    private var localServer: ServerSocket? = null
+    @Volatile private var isRunning = true
+
     private val handler = Handler(Looper.getMainLooper())
     private var isScreenOn = true
+
+    private val autoCollapseRunnable = Runnable {
+        overlayView?.toggleCard(false)
+    }
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -39,10 +58,10 @@ class FloatingBubbleService : Service() {
 
     private val pollingRunnable = object : Runnable {
         override fun run() {
-            if (isScreenOn && trackingToken.isNotBlank()) {
+            if (isScreenOn) {
                 triggerFetch()
             }
-            handler.postDelayed(this, 5000)
+            handler.postDelayed(this, 4500)
         }
     }
 
@@ -56,7 +75,7 @@ class FloatingBubbleService : Service() {
             trackingToken = incomingToken
             prefs.edit().putString("last_token", incomingToken).apply()
         } else if (trackingToken.isBlank()) {
-            trackingToken = prefs.getString("last_token", "") ?: ""
+            trackingToken = prefs.getString("last_token", "DEMO-TRACK-DZ") ?: "DEMO-TRACK-DZ"
         }
 
         val incomingUrl = intent?.getStringExtra("store_url")
@@ -72,18 +91,94 @@ class FloatingBubbleService : Service() {
     }
 
     private fun resolveDestinationUrl(): String {
-        if (targetStoreUrl.isNotBlank() && targetStoreUrl.startsWith("http")) {
+        if (targetStoreUrl.isNotBlank() && targetStoreUrl.startsWith("http") && targetStoreUrl.contains("/s/")) {
             return targetStoreUrl
         }
         val savedUrl = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
             .getString("last_store_url", "") ?: ""
-        if (savedUrl.isNotBlank() && savedUrl.startsWith("http")) {
+        if (savedUrl.isNotBlank() && savedUrl.startsWith("http") && savedUrl.contains("/s/")) {
             return savedUrl
         }
-        if (trackingToken.isNotBlank() && trackingToken != "DEMO-TRACK-DZ") {
-            return "https://my-private-store-app.vercel.app/track/${Uri.encode(trackingToken)}"
-        }
         return RadarApiClient.latestStoreUrl
+    }
+
+    private fun playSensoryAlert() {
+        try {
+            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 80, 60, 110), -1))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(180)
+            }
+        } catch (_: Exception) {}
+
+        try {
+            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
+            toneGen.startTone(ToneGenerator.TONE_PROP_ACK, 220)
+            handler.postDelayed({
+                try { toneGen.release() } catch (_: Exception) {}
+            }, 300)
+        } catch (_: Exception) {}
+    }
+
+    private fun startLocalLoopbackBridge() {
+        Thread {
+            try {
+                localServer = ServerSocket(49210, 10, InetAddress.getByName("127.0.0.1"))
+                while (isRunning) {
+                    val client = localServer?.accept() ?: break
+                    Thread {
+                        try {
+                            client.soTimeout = 2000
+                            val reader = BufferedReader(InputStreamReader(client.getInputStream()))
+                            val reqLine = reader.readLine() ?: ""
+
+                            if (reqLine.contains("/sync")) {
+                                val qStart = reqLine.indexOf("?")
+                                val qEnd = reqLine.indexOf(" HTTP/")
+                                if (qStart != -1 && qEnd > qStart) {
+                                    val query = reqLine.substring(qStart + 1, qEnd)
+                                    val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE).edit()
+                                    for (pair in query.split("&")) {
+                                        val kv = pair.split("=")
+                                        if (kv.size == 2) {
+                                            val k = URLDecoder.decode(kv[0], "UTF-8")
+                                            val v = URLDecoder.decode(kv[1], "UTF-8")
+                                            if (k == "token" && v.isNotBlank()) {
+                                                trackingToken = v
+                                                prefs.putString("last_token", v)
+                                            } else if (k == "store_url" && v.startsWith("http")) {
+                                                targetStoreUrl = v
+                                                prefs.putString("last_store_url", v)
+                                            }
+                                        }
+                                    }
+                                    prefs.apply()
+                                    triggerFetch()
+                                }
+                            }
+
+                            val writer = OutputStreamWriter(client.getOutputStream(), "UTF-8")
+                            val body = "{\"active\":true,\"version\":\"1.0.7\",\"token\":\"$trackingToken\"}"
+                            writer.write("HTTP/1.1 200 OK\r\n")
+                            writer.write("Content-Type: application/json; charset=utf-8\r\n")
+                            writer.write("Access-Control-Allow-Origin: *\r\n")
+                            writer.write("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n")
+                            writer.write("Access-Control-Allow-Headers: *\r\n")
+                            writer.write("Access-Control-Allow-Private-Network: true\r\n")
+                            writer.write("Content-Length: ${body.toByteArray().size}\r\n")
+                            writer.write("Connection: close\r\n\r\n")
+                            writer.write(body)
+                            writer.flush()
+                            client.close()
+                        } catch (_: Exception) {
+                            try { client.close() } catch (_: Exception) {}
+                        }
+                    }.start()
+                }
+            } catch (_: Exception) {}
+        }.start()
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -92,7 +187,7 @@ class FloatingBubbleService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         val density = resources.displayMetrics.density
-        val sizePx = (38 * density).toInt()
+        val sizePx = (40 * density).toInt()
 
         val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -109,8 +204,8 @@ class FloatingBubbleService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 20
-            y = 350
+            x = 24
+            y = 340
         }
 
         overlayView = RadarOverlayView(
@@ -125,6 +220,23 @@ class FloatingBubbleService : Service() {
             },
             onCloseCompanion = {
                 stopSelf()
+            },
+            onConfirmOrder = {
+                triggerFetch(action = "confirm")
+            },
+            onCallCustomer = { phone ->
+                overlayView?.toggleCard(false)
+                if (phone.isNotBlank()) {
+                    val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(dialIntent)
+                } else {
+                    Toast.makeText(this, "رقم هاتف الزبون غير متوفر", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onMerchantAdvance = {
+                triggerFetch(action = "advance")
             }
         )
 
@@ -140,6 +252,7 @@ class FloatingBubbleService : Service() {
 
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    handler.removeCallbacks(autoCollapseRunnable)
                     initialX = params.x
                     initialY = params.y
                     initialTouchX = event.rawX
@@ -182,14 +295,31 @@ class FloatingBubbleService : Service() {
         }
         registerReceiver(screenReceiver, filter)
 
+        startLocalLoopbackBridge()
         handler.post(pollingRunnable)
     }
 
-    private fun triggerFetch() {
-        if (trackingToken.isBlank()) return
+    private fun triggerFetch(action: String = "") {
         Thread {
-            val data = RadarApiClient.fetchOrder(trackingToken)
+            val data = RadarApiClient.fetchOrder(trackingToken, action)
             if (data != null) {
+                if (data.trackingToken.isNotBlank() && data.trackingToken != "DEMO-TRACK-DZ") {
+                    trackingToken = data.trackingToken
+                }
+                val prevStation = lastKnownStation
+                if (prevStation != -1 && prevStation != data.station) {
+                    handler.post {
+                        playSensoryAlert()
+                        overlayView?.toggleCard(true)
+                        handler.removeCallbacks(autoCollapseRunnable)
+                        handler.postDelayed(autoCollapseRunnable, 4500)
+                    }
+                } else if (action.isNotBlank()) {
+                    handler.post {
+                        playSensoryAlert()
+                    }
+                }
+                lastKnownStation = data.station
                 overlayView?.updateData(data)
             }
         }.start()
@@ -197,7 +327,10 @@ class FloatingBubbleService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isRunning = false
+        try { localServer?.close() } catch (_: Exception) {}
         handler.removeCallbacks(pollingRunnable)
+        handler.removeCallbacks(autoCollapseRunnable)
         try {
             unregisterReceiver(screenReceiver)
         } catch (_: Exception) {}
