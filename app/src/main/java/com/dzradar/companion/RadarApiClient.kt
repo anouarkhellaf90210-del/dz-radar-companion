@@ -13,6 +13,7 @@ data class RadarOrderState(
     val statusTitle: String,
     val statusSubtitle: String,
     val storeName: String,
+    val storeLogoUrl: String,
     val storeUrl: String
 )
 
@@ -84,6 +85,7 @@ object RadarApiClient {
                     statusTitle = title,
                     statusSubtitle = subtitle,
                     storeName = "متجر $sName",
+                    storeLogoUrl = orderObj.optString("store_logo", root.optString("store_logo", "")).trim(),
                     storeUrl = resolvedUrl
                 )
             } else {

@@ -15,6 +15,16 @@ import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.ImageView
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.Rect
+import java.net.HttpURLConnection
+import java.net.URL
 
 class RadarOverlayView(
     context: Context,
@@ -35,6 +45,8 @@ class RadarOverlayView(
     private val cardBorderDrawable: GradientDrawable
     private val headerPingDot: View
     private val headerPingDrawable: GradientDrawable
+    private val storeBadgeContainer: LinearLayout
+    private val storeLogoImg: ImageView
     private val storeBadgeText: TextView
     private val currentStatusTitle: TextView
     private val currentStatusSubtitle: TextView
@@ -48,6 +60,43 @@ class RadarOverlayView(
 
     private fun dp(v: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
+
+    
+    private var lastLoadedLogoUrl = ""
+    private fun getCircularBitmap(bitmap: Bitmap): Bitmap {
+        val size = Math.min(bitmap.width, bitmap.height)
+        val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
+        val paint = Paint().apply { isAntiAlias = true }
+        val rect = Rect(0, 0, size, size)
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
+        paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+        canvas.drawBitmap(bitmap, (bitmap.width - size) / -2f, (bitmap.height - size) / -2f, paint)
+        return output
+    }
+
+    private fun loadStoreLogoAsync(urlStr: String) {
+        if (urlStr.isBlank() || !urlStr.startsWith("http") || urlStr == lastLoadedLogoUrl) return
+        Thread {
+            try {
+                val conn = URL(urlStr).openConnection() as HttpURLConnection
+                conn.connectTimeout = 3000
+                conn.readTimeout = 3000
+                conn.doInput = true
+                conn.connect()
+                val bmp = BitmapFactory.decodeStream(conn.inputStream)
+                conn.inputStream.close()
+                if (bmp != null) {
+                    val circleBmp = getCircularBitmap(bmp)
+                    lastLoadedLogoUrl = urlStr
+                    uiHandler.post {
+                        storeLogoImg.setImageBitmap(circleBmp)
+                        storeLogoImg.visibility = View.VISIBLE
+                    }
+                }
+            } catch (_: Exception) {}
+        }.start()
+    }
 
     init {
         val rootLayout = LinearLayout(context).apply {
@@ -152,41 +201,41 @@ class RadarOverlayView(
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        storeBadgeText = TextView(context).apply {
-            text = "متجر Patron"
-            setTextColor(Color.parseColor("#FDE68A"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+        storeBadgeContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#18181B"))
-                cornerRadius = dp(8).toFloat()
+                cornerRadius = dp(9).toFloat()
                 setStroke(dp(1), Color.parseColor("#D4AF37"))
             }
-            setPadding(dp(7), dp(3), dp(7), dp(3))
+            setPadding(dp(6), dp(3), dp(7), dp(3))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 leftMargin = dp(8)
             }
         }
 
-        // زر الإكس الأحمر الصغير لإنهاء وإغلاق التطبيق نهائياً
-        val killRedXBtn = TextView(context).apply {
-            text = "✕"
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#DC2626"))
+        storeLogoImg = ImageView(context).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(17), dp(17)).apply {
+                leftMargin = dp(4)
             }
-            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
-            setOnClickListener {
-                onKillCompanion()
-            }
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            visibility = View.GONE
         }
+
+        storeBadgeText = TextView(context).apply {
+            text = "متجر Patron"
+            setTextColor(Color.parseColor("#FDE68A"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+
+        storeBadgeContainer.addView(storeLogoImg)
+        storeBadgeContainer.addView(storeBadgeText)
 
         topRow.addView(headerPingDot)
         topRow.addView(modalHeaderTitle)
-        topRow.addView(storeBadgeText)
+        topRow.addView(storeBadgeContainer)
         topRow.addView(killRedXBtn)
         cardContainer.addView(topRow)
 
@@ -459,6 +508,7 @@ class RadarOverlayView(
             val shouldAnimate = currentStation != data.station
             currentStation = data.station
             storeBadgeText.text = data.storeName
+            if (data.storeLogoUrl.isNotBlank()) { loadStoreLogoAsync(data.storeLogoUrl) }
             currentStatusTitle.text = data.statusTitle
             currentStatusSubtitle.text = data.statusSubtitle
             applyStationVisuals(data.station, animateMorph = shouldAnimate)
