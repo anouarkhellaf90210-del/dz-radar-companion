@@ -6,7 +6,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="رادار الطرد"
+        android:label="رادار الطرد والتاجر"
         android:icon="@drawable/ic_launcher"
         android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
@@ -29,6 +29,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="dzradar" android:host="track" />
+                <data android:scheme="dzradar" android:host="merchant" />
             </intent-filter>
         </activity>
 

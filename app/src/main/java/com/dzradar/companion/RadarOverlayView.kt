@@ -30,7 +30,10 @@ class RadarOverlayView(
     context: Context,
     private val onOpenStore: () -> Unit,
     private val onKillCompanion: () -> Unit,
-    private val onHideOverlay: () -> Unit
+    private val onHideOverlay: () -> Unit,
+    private val onAdvanceOrder: (String) -> Unit = {},
+    private val onCallCustomer: (String) -> Unit = {},
+    private val onWhatsAppCustomer: (String, String, String) -> Unit = { _, _, _ -> }
 ) : FrameLayout(context) {
 
     private val uiHandler = Handler(Looper.getMainLooper())
@@ -38,19 +41,27 @@ class RadarOverlayView(
     private val bubbleOuterHalo: GradientDrawable
     private val bubbleRing: GradientDrawable
     private val bubbleIcon: TextView
-    private val livePingDot: View
+    private val bubbleLogoImg: ImageView
+    private val livePingDot: TextView
     private val livePingDrawable: GradientDrawable
 
     val cardContainer: LinearLayout
     private val cardBorderDrawable: GradientDrawable
     private val headerPingDot: View
     private val headerPingDrawable: GradientDrawable
+    private val modalHeaderTitle: TextView
     private val storeBadgeContainer: LinearLayout
     private val storeLogoImg: ImageView
     private val storeBadgeText: TextView
     private val killRedXBtn: TextView
     private val currentStatusTitle: TextView
     private val currentStatusSubtitle: TextView
+
+    private val merchantActionsContainer: LinearLayout
+    private val merchantAdvanceBtn: TextView
+    private val merchantCallBtn: TextView
+    private val merchantWaBtn: TextView
+    private val openStoreBtn: TextView
 
     private val stationNodeDrawables = mutableListOf<GradientDrawable>()
     private val stationLabels = mutableListOf<TextView>()
@@ -59,6 +70,10 @@ class RadarOverlayView(
     private var cardOpen = false
     private var currentStation = 0
     private var lastLoadedLogoUrl = ""
+    private var currentActiveOrderId = ""
+    private var currentCustomerPhone = ""
+    private var currentCustomerName = ""
+    private var currentCleanStoreName = ""
 
     private fun dp(v: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
@@ -92,6 +107,8 @@ class RadarOverlayView(
                     uiHandler.post {
                         storeLogoImg.setImageBitmap(circleBmp)
                         storeLogoImg.visibility = View.VISIBLE
+                        bubbleLogoImg.setImageBitmap(circleBmp)
+                        bubbleLogoImg.visibility = View.VISIBLE
                     }
                 }
             } catch (_: Exception) {}
@@ -116,7 +133,7 @@ class RadarOverlayView(
         }
 
         bubbleContainer = FrameLayout(context).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
             background = bubbleOuterHalo
             setPadding(dp(3), dp(3), dp(3), dp(3))
             elevation = dp(10).toFloat()
@@ -125,6 +142,13 @@ class RadarOverlayView(
         val innerBubble = FrameLayout(context).apply {
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
             background = bubbleRing
+            setPadding(dp(2), dp(2), dp(2), dp(2))
+        }
+
+        bubbleLogoImg = ImageView(context).apply {
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            visibility = View.GONE
         }
 
         bubbleIcon = TextView(context).apply {
@@ -133,6 +157,8 @@ class RadarOverlayView(
             gravity = Gravity.CENTER
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         }
+
+        innerBubble.addView(bubbleLogoImg)
         innerBubble.addView(bubbleIcon)
         bubbleContainer.addView(innerBubble)
 
@@ -142,12 +168,15 @@ class RadarOverlayView(
             setStroke(dp(1), Color.parseColor("#09090B"))
         }
 
-        livePingDot = View(context).apply {
+        livePingDot = TextView(context).apply {
+            text = ""
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
             background = livePingDrawable
-            layoutParams = LayoutParams(dp(10), dp(10)).apply {
+            layoutParams = LayoutParams(dp(14), dp(14)).apply {
                 gravity = Gravity.TOP or Gravity.END
-                topMargin = dp(2)
-                rightMargin = dp(2)
             }
         }
         bubbleContainer.addView(livePingDot)
@@ -163,9 +192,9 @@ class RadarOverlayView(
             visibility = View.GONE
             layoutDirection = View.LAYOUT_DIRECTION_RTL
             background = cardBorderDrawable
-            setPadding(dp(16), dp(14), dp(16), dp(14))
+            setPadding(dp(15), dp(13), dp(15), dp(13))
             elevation = dp(12).toFloat()
-            layoutParams = LinearLayout.LayoutParams(dp(276), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(292), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(8)
             }
             setOnClickListener { toggleCard(false) }
@@ -189,10 +218,10 @@ class RadarOverlayView(
             }
         }
 
-        val modalHeaderTitle = TextView(context).apply {
+        modalHeaderTitle = TextView(context).apply {
             text = "رادار تتبع الطرد الحي"
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
@@ -202,17 +231,17 @@ class RadarOverlayView(
             gravity = Gravity.CENTER_VERTICAL
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#18181B"))
-                cornerRadius = dp(9).toFloat()
+                cornerRadius = dp(10).toFloat()
                 setStroke(dp(1), Color.parseColor("#D4AF37"))
             }
             setPadding(dp(6), dp(3), dp(7), dp(3))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                leftMargin = dp(8)
+                leftMargin = dp(6)
             }
         }
 
         storeLogoImg = ImageView(context).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(17), dp(17)).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply {
                 leftMargin = dp(4)
             }
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -256,10 +285,10 @@ class RadarOverlayView(
                 cornerRadius = dp(14).toFloat()
                 setStroke(dp(1), Color.parseColor("#27272A"))
             }
-            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setPadding(dp(11), dp(9), dp(11), dp(9))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(10)
-                bottomMargin = dp(12)
+                topMargin = dp(9)
+                bottomMargin = dp(10)
             }
             setOnClickListener { toggleCard(false) }
         }
@@ -267,14 +296,14 @@ class RadarOverlayView(
         currentStatusTitle = TextView(context).apply {
             text = "متابعة الطلب المباشرة"
             setTextColor(Color.parseColor("#D4AF37"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             typeface = Typeface.DEFAULT_BOLD
         }
 
         currentStatusSubtitle = TextView(context).apply {
             text = "طلبك في أيدٍ أمينة ونحن نراقبه لأجلك لحظة بلحظة"
-            setTextColor(Color.parseColor("#A1A1AA"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextColor(Color.parseColor("#D4D4D8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(3)
             }
@@ -283,6 +312,89 @@ class RadarOverlayView(
         statusHeroBox.addView(currentStatusTitle)
         statusHeroBox.addView(currentStatusSubtitle)
         cardContainer.addView(statusHeroBox)
+
+        merchantActionsContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = dp(10)
+            }
+        }
+
+        merchantAdvanceBtn = TextView(context).apply {
+            text = "⚡ قبول وتأكيد الطلب فوراً"
+            setTextColor(Color.parseColor("#09090B"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FBBF24"))
+                cornerRadius = dp(11).toFloat()
+            }
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = dp(6)
+            }
+            setOnClickListener {
+                if (currentActiveOrderId.isNotBlank()) {
+                    merchantAdvanceBtn.text = "⏳ جاري تحديث حالة الطلب..."
+                    onAdvanceOrder(currentActiveOrderId)
+                }
+            }
+        }
+
+        val merchantContactRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+
+        merchantCallBtn = TextView(context).apply {
+            text = "📞 اتصال بالزبون"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1E1B4B"))
+                cornerRadius = dp(10).toFloat()
+                setStroke(dp(1), Color.parseColor("#6366F1"))
+            }
+            setPadding(dp(8), dp(7), dp(8), dp(7))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                leftMargin = dp(5)
+            }
+            setOnClickListener {
+                if (currentCustomerPhone.isNotBlank()) {
+                    onCallCustomer(currentCustomerPhone)
+                }
+            }
+        }
+
+        merchantWaBtn = TextView(context).apply {
+            text = "💬 واتساب الزبون"
+            setTextColor(Color.parseColor("#6EE7B7"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#052E16"))
+                cornerRadius = dp(10).toFloat()
+                setStroke(dp(1), Color.parseColor("#10B981"))
+            }
+            setPadding(dp(8), dp(7), dp(8), dp(7))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener {
+                if (currentCustomerPhone.isNotBlank()) {
+                    onWhatsAppCustomer(currentCustomerPhone, currentCustomerName, currentCleanStoreName)
+                }
+            }
+        }
+
+        merchantContactRow.addView(merchantCallBtn)
+        merchantContactRow.addView(merchantWaBtn)
+        merchantActionsContainer.addView(merchantAdvanceBtn)
+        merchantActionsContainer.addView(merchantContactRow)
+        cardContainer.addView(merchantActionsContainer)
 
         val stepperTrackRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -301,13 +413,13 @@ class RadarOverlayView(
             stationNodeDrawables.add(nodeBg)
 
             val nodeFrame = FrameLayout(context).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
+                layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
                 background = nodeBg
             }
 
             val iconTv = TextView(context).apply {
                 text = icons[i]
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
                 gravity = Gravity.CENTER
                 layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
             }
@@ -331,8 +443,8 @@ class RadarOverlayView(
         val labelsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(6)
-                bottomMargin = dp(14)
+                topMargin = dp(5)
+                bottomMargin = dp(12)
             }
             setOnClickListener { toggleCard(false) }
         }
@@ -357,17 +469,17 @@ class RadarOverlayView(
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
 
-        val openStoreBtn = TextView(context).apply {
+        openStoreBtn = TextView(context).apply {
             text = "العودة للمتجر 🌐"
             setTextColor(Color.parseColor("#052E16"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#10B981"))
                 cornerRadius = dp(12).toFloat()
             }
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setPadding(dp(10), dp(8), dp(10), dp(8))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
                 leftMargin = dp(6)
             }
@@ -377,7 +489,7 @@ class RadarOverlayView(
         val hideStandbyBtn = TextView(context).apply {
             text = "إخفاء من الشاشة 👁️"
             setTextColor(Color.parseColor("#D4D4D8"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
@@ -517,9 +629,49 @@ class RadarOverlayView(
             storeBadgeText.text = data.storeName
             currentStatusTitle.text = data.statusTitle
             currentStatusSubtitle.text = data.statusSubtitle
+            currentActiveOrderId = data.activeOrderId
+            currentCustomerPhone = data.customerPhone
+            currentCustomerName = data.customerName
+            currentCleanStoreName = data.storeName.replace("👑", "").trim()
+
+            if (data.isMerchantMode) {
+                modalHeaderTitle.text = "رادار قيادة التاجر"
+                openStoreBtn.text = "لوحة التاجر 🌐"
+                stationLabels[0].text = "جديد (${data.newCount})"
+                stationLabels[1].text = "تجهيز (${data.preparingCount})"
+                stationLabels[2].text = "شحن (${data.shippingCount})"
+                stationLabels[3].text = "تم (${data.deliveredCount})"
+
+                if (data.newCount > 0) {
+                    livePingDot.text = data.newCount.toString()
+                    livePingDrawable.setColor(Color.parseColor("#E11D48"))
+                } else {
+                    livePingDot.text = ""
+                }
+
+                if (data.activeOrderId.isNotBlank()) {
+                    merchantActionsContainer.visibility = View.VISIBLE
+                    merchantAdvanceBtn.text = data.nextActionLabel.ifBlank { "⚡ قبول وتأكيد الطلب فوراً" }
+                } else {
+                    merchantActionsContainer.visibility = View.GONE
+                }
+            } else {
+                modalHeaderTitle.text = "رادار تتبع الطرد الحي"
+                openStoreBtn.text = "العودة للمتجر 🌐"
+                stationLabels[0].text = "قيد التأكيد"
+                stationLabels[1].text = "تم التجهيز"
+                stationLabels[2].text = "خرج للتوصيل"
+                stationLabels[3].text = "تم الاستلام"
+                livePingDot.text = ""
+                merchantActionsContainer.visibility = View.GONE
+            }
+
             applyStationVisuals(data.station, animateMorph = shouldAnimate)
             if (data.storeLogoUrl.isNotBlank()) {
                 loadStoreLogoAsync(data.storeLogoUrl)
+                bubbleIcon.visibility = View.GONE
+            } else {
+                bubbleIcon.visibility = View.VISIBLE
             }
         }
     }

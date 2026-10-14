@@ -14,7 +14,16 @@ data class RadarOrderState(
     val statusSubtitle: String,
     val storeName: String,
     val storeLogoUrl: String,
-    val storeUrl: String
+    val storeUrl: String,
+    val isMerchantMode: Boolean = false,
+    val activeOrderId: String = "",
+    val customerName: String = "",
+    val customerPhone: String = "",
+    val nextActionLabel: String = "",
+    val newCount: Int = 0,
+    val preparingCount: Int = 0,
+    val shippingCount: Int = 0,
+    val deliveredCount: Int = 0
 )
 
 object RadarApiClient {
@@ -87,7 +96,88 @@ object RadarApiClient {
                     statusSubtitle = subtitle,
                     storeName = "متجر $sName",
                     storeLogoUrl = sLogo,
-                    storeUrl = resolvedUrl
+                    storeUrl = resolvedUrl,
+                    isMerchantMode = false
+                )
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun fetchMerchantState(slug: String, advanceOrderId: String = ""): RadarOrderState? {
+        val cleanSlug = slug.trim().ifBlank { "latest" }
+        return try {
+            val encodedSlug = URLEncoder.encode(cleanSlug, "UTF-8")
+            val actionPart = if (advanceOrderId.isNotBlank()) {
+                "&action=advance&order_id=${URLEncoder.encode(advanceOrderId.trim(), "UTF-8")}"
+            } else ""
+            val endpoint = "$baseOrigin/api/merchant/companion?slug=$encodedSlug$actionPart&_cb=${System.currentTimeMillis()}"
+            val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 5000
+                readTimeout = 5000
+                setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+            }
+
+            if (conn.responseCode == 200) {
+                val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                val response = reader.readText()
+                reader.close()
+
+                val root = JSONObject(response)
+                val sName = root.optString("store_name", "متجري").trim().ifBlank { "متجري" }
+                val sLogo = root.optString("store_logo", "").trim()
+                val sSlug = root.optString("store_slug", cleanSlug).trim().ifBlank { "dzball" }
+                val newCnt = root.optInt("new_count", 0)
+                val prepCnt = root.optInt("preparing_count", 0)
+                val shipCnt = root.optInt("shipping_count", 0)
+                val delivCnt = root.optInt("delivered_count", 0)
+                val todayRev = root.optInt("today_revenue", 0)
+
+                val activeObj = root.optJSONObject("active_order")
+                val ordId = activeObj?.optString("id", "") ?: ""
+                val station = activeObj?.optInt("station", 1) ?: 1
+                val custName = activeObj?.optString("customer_name", "") ?: ""
+                val custPhone = activeObj?.optString("customer_phone", "") ?: ""
+                val wilaya = activeObj?.optString("wilaya", "") ?: ""
+                val totalDzd = activeObj?.optInt("total", 0) ?: 0
+                val itemsStr = activeObj?.optString("items_summary", "") ?: ""
+                val nextLabel = activeObj?.optString("next_action_label", "⚡ قبول وتأكيد الطلب فوراً") ?: ""
+
+                val title = if (ordId.isNotBlank()) {
+                    "👤 $custName ($wilaya) • ${totalDzd} د.ج"
+                } else {
+                    "رادار التاجر نشط 🟢 (بانتظار الطلبات)"
+                }
+
+                val subtitle = if (ordId.isNotBlank()) {
+                    "🛍️ $itemsStr | مبيعات اليوم: ${todayRev} د.ج"
+                } else {
+                    "مبيعات اليوم: ${todayRev} د.ج | ستنبثق الكبسولة تلقائياً فور وصول أي طلب!"
+                }
+
+                val merchantDashboardUrl = "$baseOrigin/merchant?store=$sSlug"
+
+                RadarOrderState(
+                    trackingToken = ordId.ifBlank { "MERCHANT-IDLE" },
+                    station = station,
+                    statusTitle = title,
+                    statusSubtitle = subtitle,
+                    storeName = "👑 $sName",
+                    storeLogoUrl = sLogo,
+                    storeUrl = merchantDashboardUrl,
+                    isMerchantMode = true,
+                    activeOrderId = ordId,
+                    customerName = custName,
+                    customerPhone = custPhone,
+                    nextActionLabel = nextLabel,
+                    newCount = newCnt,
+                    preparingCount = prepCnt,
+                    shippingCount = shipCnt,
+                    deliveredCount = delivCnt
                 )
             } else {
                 null

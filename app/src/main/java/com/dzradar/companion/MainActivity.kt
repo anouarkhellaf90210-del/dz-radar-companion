@@ -87,9 +87,21 @@ class MainActivity : Activity() {
         try {
             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
             val clipText = cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.trim() ?: return
-            if (clipText.startsWith("DZRADAR|")) {
+            if (clipText.startsWith("DZMERCHANT|")) {
                 val parts = clipText.split("|")
                 val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE).edit()
+                prefs.putString("radar_mode", "merchant")
+                if (parts.size >= 2 && parts[1].isNotBlank()) {
+                    prefs.putString("merchant_slug", parts[1].trim())
+                }
+                if (parts.size >= 3 && parts[2].startsWith("http")) {
+                    prefs.putString("last_store_url", parts[2].trim())
+                }
+                prefs.apply()
+            } else if (clipText.startsWith("DZRADAR|")) {
+                val parts = clipText.split("|")
+                val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE).edit()
+                prefs.putString("radar_mode", "customer")
                 if (parts.size >= 2 && parts[1].isNotBlank()) {
                     prefs.putString("last_token", parts[1].trim())
                 }
@@ -105,6 +117,18 @@ class MainActivity : Activity() {
         val data = intent?.data ?: return
         val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE).edit()
 
+        val host = data.host ?: ""
+        val modeParam = data.getQueryParameter("mode") ?: ""
+        if (host.equals("merchant", ignoreCase = true) || modeParam.equals("merchant", ignoreCase = true)) {
+            prefs.putString("radar_mode", "merchant")
+            val mSlug = data.getQueryParameter("slug")
+            if (!mSlug.isNullOrBlank()) {
+                prefs.putString("merchant_slug", mSlug.trim())
+            }
+        } else {
+            prefs.putString("radar_mode", "customer")
+        }
+
         val token = data.getQueryParameter("token")
         if (!token.isNullOrBlank()) {
             prefs.putString("last_token", token.trim())
@@ -116,7 +140,7 @@ class MainActivity : Activity() {
         }
 
         val slug = data.getQueryParameter("slug")
-        if (!slug.isNullOrBlank()) {
+        if (!slug.isNullOrBlank() && host != "merchant") {
             prefs.putString("last_store_url", "https://my-private-store-app.vercel.app/s/${slug.trim()}")
         }
 
@@ -144,7 +168,12 @@ class MainActivity : Activity() {
 
     private fun startBubbleAndFinish() {
         captureClipboardHandshakeIfNeeded()
+        val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
+        val mode = prefs.getString("radar_mode", "customer") ?: "customer"
+        val mSlug = prefs.getString("merchant_slug", "latest") ?: "latest"
         val serviceIntent = Intent(this, FloatingBubbleService::class.java).apply {
+            putExtra("mode", mode)
+            putExtra("merchant_slug", mSlug)
             putExtra("token", getSavedToken())
             putExtra("store_url", getSavedStoreUrl())
             putExtra("expand", true)

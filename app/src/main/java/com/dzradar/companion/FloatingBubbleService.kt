@@ -26,14 +26,18 @@ import java.io.OutputStreamWriter
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.URLDecoder
+import java.net.URLEncoder
 import kotlin.math.hypot
 
 class FloatingBubbleService : Service() {
 
     private var windowManager: WindowManager? = null
     private var overlayView: RadarOverlayView? = null
+    private var radarMode: String = "customer"
+    private var merchantSlug: String = "latest"
     private var trackingToken: String = "latest"
     private var lastResolvedOrderToken: String = ""
+    private var lastMerchantNewCount: Int = -1
     private var targetStoreUrl: String = ""
     private var lastKnownStation: Int = 0
     private var localServer: ServerSocket? = null
@@ -43,7 +47,9 @@ class FloatingBubbleService : Service() {
     private var isScreenOn = true
 
     private val autoCollapseRunnable = Runnable {
-        overlayView?.toggleCard(false)
+        if (radarMode != "merchant") {
+            overlayView?.toggleCard(false)
+        }
     }
 
     private val screenReceiver = object : BroadcastReceiver() {
@@ -70,6 +76,22 @@ class FloatingBubbleService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
+
+        val incomingMode = intent?.getStringExtra("mode")
+        if (!incomingMode.isNullOrBlank()) {
+            radarMode = incomingMode.trim()
+            prefs.edit().putString("radar_mode", radarMode).apply()
+        } else {
+            radarMode = prefs.getString("radar_mode", "customer") ?: "customer"
+        }
+
+        val incomingMerchantSlug = intent?.getStringExtra("merchant_slug")
+        if (!incomingMerchantSlug.isNullOrBlank()) {
+            merchantSlug = incomingMerchantSlug.trim()
+            prefs.edit().putString("merchant_slug", merchantSlug).apply()
+        } else {
+            merchantSlug = prefs.getString("merchant_slug", "latest") ?: "latest"
+        }
 
         val incomingToken = intent?.getStringExtra("token")
         if (!incomingToken.isNullOrBlank() && incomingToken != "SENTINEL-IDLE" && incomingToken != "DEMO-TRACK-DZ") {
@@ -99,7 +121,9 @@ class FloatingBubbleService : Service() {
                 playStationTransitionAlert()
                 overlayView?.toggleCard(true)
                 handler.removeCallbacks(autoCollapseRunnable)
-                handler.postDelayed(autoCollapseRunnable, 6000)
+                if (radarMode != "merchant") {
+                    handler.postDelayed(autoCollapseRunnable, 6000)
+                }
             }
         }
 
@@ -108,6 +132,9 @@ class FloatingBubbleService : Service() {
     }
 
     private fun resolveDestinationUrl(): String {
+        if (radarMode == "merchant") {
+            return "${RadarApiClient.baseOrigin}/merchant?store=${URLEncoder.encode(merchantSlug, "UTF-8")}"
+        }
         val base = when {
             targetStoreUrl.isNotBlank() && targetStoreUrl.startsWith("http") && targetStoreUrl.contains("/s/") -> targetStoreUrl
             else -> {
@@ -140,19 +167,19 @@ class FloatingBubbleService : Service() {
         try {
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 70, 50, 100), -1))
+                vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 90, 60, 140), -1))
             } else {
                 @Suppress("DEPRECATION")
-                vibrator?.vibrate(160)
+                vibrator?.vibrate(200)
             }
         } catch (_: Exception) {}
 
         try {
-            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
-            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 200)
+            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 90)
+            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 240)
             handler.postDelayed({
                 try { toneGen.release() } catch (_: Exception) {}
-            }, 260)
+            }, 300)
         } catch (_: Exception) {}
     }
 
@@ -186,7 +213,13 @@ class FloatingBubbleService : Service() {
                                         if (kv.size == 2) {
                                             val k = URLDecoder.decode(kv[0], "UTF-8")
                                             val v = URLDecoder.decode(kv[1], "UTF-8")
-                                            if (k == "token" && v.isNotBlank() && v != "ACTIVE-ORDER" && v != "DEMO-TRACK-DZ" && v != "SENTINEL-IDLE") {
+                                            if (k == "mode" && v.isNotBlank()) {
+                                                radarMode = v.trim()
+                                                prefs.putString("radar_mode", radarMode)
+                                            } else if (k == "slug" && v.isNotBlank()) {
+                                                merchantSlug = v.trim()
+                                                prefs.putString("merchant_slug", merchantSlug)
+                                            } else if (k == "token" && v.isNotBlank() && v != "ACTIVE-ORDER" && v != "DEMO-TRACK-DZ" && v != "SENTINEL-IDLE") {
                                                 trackingToken = v.trim()
                                                 prefs.putString("last_token", trackingToken)
                                             } else if (k == "store_url" && v.startsWith("http")) {
@@ -202,7 +235,7 @@ class FloatingBubbleService : Service() {
                             }
 
                             val writer = OutputStreamWriter(client.getOutputStream(), "UTF-8")
-                            val body = if (isOptions) "" else "{\"active\":true,\"version\":\"1.1.5\",\"token\":\"$trackingToken\",\"station\":$lastKnownStation}"
+                            val body = if (isOptions) "" else "{\"active\":true,\"version\":\"1.2.0\",\"mode\":\"$radarMode\",\"token\":\"$trackingToken\",\"station\":$lastKnownStation}"
                             val bodyBytes = body.toByteArray(Charsets.UTF_8)
                             writer.write(if (isOptions) "HTTP/1.1 204 No Content\r\n" else "HTTP/1.1 200 OK\r\n")
                             writer.write("Content-Type: application/json; charset=utf-8\r\n")
@@ -232,7 +265,7 @@ class FloatingBubbleService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         val density = resources.displayMetrics.density
-        val sizePx = (44 * density).toInt()
+        val sizePx = (48 * density).toInt()
         val tapSlopPx = 5f * density
 
         val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -251,7 +284,7 @@ class FloatingBubbleService : Service() {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 24
-            y = 340
+            y = 320
         }
 
         overlayView = RadarOverlayView(
@@ -270,6 +303,44 @@ class FloatingBubbleService : Service() {
             onHideOverlay = {
                 overlayView?.toggleCard(false)
                 overlayView?.visibility = View.GONE
+            },
+            onAdvanceOrder = { orderId ->
+                playMicroTapHaptic()
+                Thread {
+                    val updated = RadarApiClient.fetchMerchantState(merchantSlug, advanceOrderId = orderId)
+                    if (updated != null) {
+                        lastKnownStation = updated.station
+                        lastMerchantNewCount = updated.newCount
+                        overlayView?.updateData(updated)
+                        playStationTransitionAlert()
+                    }
+                }.start()
+            },
+            onCallCustomer = { phone ->
+                overlayView?.toggleCard(false)
+                try {
+                    val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${phone.trim()}")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(dialIntent)
+                } catch (_: Exception) {}
+            },
+            onWhatsAppCustomer = { phone, custName, storeName ->
+                overlayView?.toggleCard(false)
+                try {
+                    val digits = phone.replace(Regex("\\D"), "")
+                    val intlPhone = when {
+                        digits.startsWith("0") -> "213" + digits.substring(1)
+                        !digits.startsWith("213") && digits.length == 9 -> "213" + digits
+                        else -> digits
+                    }
+                    val msg = "السلام عليكم $custName، معك متجر $storeName لتأكيد طلبيتك وتجهيزها للشحن. شكراً لثقتك بنا! ✨"
+                    val waUrl = "https://wa.me/$intlPhone?text=${URLEncoder.encode(msg, "UTF-8")}"
+                    val waIntent = Intent(Intent.ACTION_VIEW, Uri.parse(waUrl)).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(waIntent)
+                } catch (_: Exception) {}
             }
         )
 
@@ -339,6 +410,29 @@ class FloatingBubbleService : Service() {
 
     private fun triggerFetch(forceExpandOnFirstLoad: Boolean = false) {
         Thread {
+            if (radarMode == "merchant") {
+                val data = RadarApiClient.fetchMerchantState(merchantSlug)
+                if (data != null) {
+                    val isNewOrderArrived =
+                        (lastResolvedOrderToken.isNotBlank() && lastResolvedOrderToken != data.trackingToken && data.activeOrderId.isNotBlank()) ||
+                        (lastMerchantNewCount >= 0 && data.newCount > lastMerchantNewCount)
+
+                    lastResolvedOrderToken = data.trackingToken
+                    lastMerchantNewCount = data.newCount
+                    lastKnownStation = data.station
+
+                    if (isNewOrderArrived || forceExpandOnFirstLoad) {
+                        handler.post {
+                            overlayView?.visibility = View.VISIBLE
+                            playStationTransitionAlert()
+                            overlayView?.toggleCard(true)
+                        }
+                    }
+                    overlayView?.updateData(data)
+                }
+                return@Thread
+            }
+
             val data = RadarApiClient.fetchOrder("latest") ?: RadarApiClient.fetchOrder(trackingToken)
             if (data != null) {
                 val isNewOrder = lastResolvedOrderToken.isNotBlank() && lastResolvedOrderToken != data.trackingToken
