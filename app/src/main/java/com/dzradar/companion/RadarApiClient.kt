@@ -58,7 +58,7 @@ object RadarApiClient {
 
                 var sName = orderObj.optString("store_name", root.optString("store_name", "")).trim()
                 if (sName.isBlank() || sName.equals("Dzball", ignoreCase = true)) {
-                    sName = "Marik"
+                    sName = "Patron"
                 }
 
                 val resolvedUrl = "$baseOrigin/s/$slug"

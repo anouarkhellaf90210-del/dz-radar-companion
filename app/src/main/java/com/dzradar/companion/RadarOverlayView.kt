@@ -19,8 +19,8 @@ import android.widget.TextView
 class RadarOverlayView(
     context: Context,
     private val onOpenStore: () -> Unit,
-    private val onKillCompanion: () -> Unit, // Red 'X' kills service completely
-    private val onHideOverlay: () -> Unit     // "إخفاء من الشاشة" keeps service running in standby
+    private val onKillCompanion: () -> Unit,
+    private val onHideOverlay: () -> Unit
 ) : FrameLayout(context) {
 
     private val uiHandler = Handler(Looper.getMainLooper())
@@ -119,13 +119,13 @@ class RadarOverlayView(
             layoutParams = LinearLayout.LayoutParams(dp(276), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(8)
             }
-            // Clicking anywhere on the card background folds it back to the bubble!
+            // النقر على مساحة فارغة في البطاقة يطويها لتعود كبسولة مصغرة
             setOnClickListener {
                 toggleCard(false)
             }
         }
 
-        // Top Row: Red Kill 'X' Button + Title + Store Badge
+        // شريط الرأس: زر الإغلاق النهائي الأحمر الصغير + العنوان + اسم المتجر
         val topRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -153,7 +153,7 @@ class RadarOverlayView(
         }
 
         storeBadgeText = TextView(context).apply {
-            text = "متجر Marik"
+            text = "متجر Patron"
             setTextColor(Color.parseColor("#FDE68A"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             background = GradientDrawable().apply {
@@ -167,7 +167,7 @@ class RadarOverlayView(
             }
         }
 
-        // Red 'X' Button: Kills Service completely
+        // زر الإكس الأحمر الصغير لإنهاء وإغلاق التطبيق نهائياً
         val killRedXBtn = TextView(context).apply {
             text = "✕"
             setTextColor(Color.WHITE)
@@ -190,7 +190,7 @@ class RadarOverlayView(
         topRow.addView(killRedXBtn)
         cardContainer.addView(topRow)
 
-        // Status Banner
+        // لوحة الحالة
         val statusHeroBox = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -203,7 +203,6 @@ class RadarOverlayView(
                 topMargin = dp(10)
                 bottomMargin = dp(12)
             }
-            // Allow clicking to fold
             setOnClickListener { toggleCard(false) }
         }
 
@@ -227,7 +226,7 @@ class RadarOverlayView(
         statusHeroBox.addView(currentStatusSubtitle)
         cardContainer.addView(statusHeroBox)
 
-        // 4-Station Stepper
+        // شريط المحطات الأربع
         val stepperTrackRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -295,7 +294,7 @@ class RadarOverlayView(
         }
         cardContainer.addView(labelsRow)
 
-        // Actions Row: [العودة للمتجر 🌐] + [إخفاء من الشاشة 👁️]
+        // شريط الأزرار: [العودة للمتجر 🌐] + [إخفاء من الشاشة 👁️]
         val actionsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL

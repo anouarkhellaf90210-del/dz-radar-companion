@@ -18,6 +18,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -31,12 +32,14 @@ class FloatingBubbleService : Service() {
 
     private var windowManager: WindowManager? = null
     private var overlayView: RadarOverlayView? = null
+    private lateinit var windowParams: WindowManager.LayoutParams
     private var trackingToken: String = "latest"
     private var lastResolvedOrderToken: String = ""
     private var targetStoreUrl: String = ""
     private var lastKnownStation: Int = 0
     private var localServer: ServerSocket? = null
     @Volatile private var isRunning = true
+    @Volatile private var isOverlayInStandby = false
 
     private val handler = Handler(Looper.getMainLooper())
     private var isScreenOn = true
@@ -92,13 +95,12 @@ class FloatingBubbleService : Service() {
         }
 
         val shouldExpand = intent?.getBooleanExtra("expand", false) ?: false
-        if (shouldExpand) {
-            handler.postDelayed({
-                playStationTransitionAlert()
-                overlayView?.toggleCard(true)
-                handler.removeCallbacks(autoCollapseRunnable)
-                handler.postDelayed(autoCollapseRunnable, 6000)
-            }, 250)
+
+        // If explicitly woken by new order intent, restore from standby immediately!
+        if (isOverlayInStandby || shouldExpand) {
+            handler.post {
+                unhideOverlayToScreen(expand = shouldExpand)
+            }
         }
 
         triggerFetch(forceExpandOnFirstLoad = shouldExpand)
@@ -120,6 +122,33 @@ class FloatingBubbleService : Service() {
         }
         val cleanBase = base.split("?")[0]
         return "$cleanBase?native_bubble=1"
+    }
+
+    private fun unhideOverlayToScreen(expand: Boolean = true) {
+        isOverlayInStandby = false
+        overlayView?.visibility = View.VISIBLE
+        overlayView?.bubbleContainer?.visibility = View.VISIBLE
+        overlayView?.requestLayout()
+        overlayView?.invalidate()
+        try {
+            windowManager?.updateViewLayout(overlayView, windowParams)
+        } catch (_: Exception) {}
+
+        if (expand) {
+            playStationTransitionAlert()
+            overlayView?.toggleCard(true)
+            handler.removeCallbacks(autoCollapseRunnable)
+            handler.postDelayed(autoCollapseRunnable, 6500)
+        }
+    }
+
+    private fun hideOverlayToStandby() {
+        isOverlayInStandby = true
+        overlayView?.toggleCard(false)
+        overlayView?.visibility = View.GONE
+        try {
+            windowManager?.updateViewLayout(overlayView, windowParams)
+        } catch (_: Exception) {}
     }
 
     private fun playMicroTapHaptic() {
@@ -200,7 +229,7 @@ class FloatingBubbleService : Service() {
                             }
 
                             val writer = OutputStreamWriter(client.getOutputStream(), "UTF-8")
-                            val body = if (isOptions) "" else "{\"active\":true,\"version\":\"1.1.1\",\"token\":\"$trackingToken\",\"station\":$lastKnownStation}"
+                            val body = if (isOptions) "" else "{\"active\":true,\"version\":\"1.1.4\",\"token\":\"$trackingToken\",\"station\":$lastKnownStation}"
                             val bodyBytes = body.toByteArray(Charsets.UTF_8)
                             writer.write(if (isOptions) "HTTP/1.1 204 No Content\r\n" else "HTTP/1.1 200 OK\r\n")
                             writer.write("Content-Type: application/json; charset=utf-8\r\n")
@@ -240,7 +269,7 @@ class FloatingBubbleService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        val params = WindowManager.LayoutParams(
+        windowParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             layoutFlag,
@@ -266,8 +295,7 @@ class FloatingBubbleService : Service() {
                 stopSelf()
             },
             onHideOverlay = {
-                overlayView?.toggleCard(false)
-                overlayView?.visibility = android.view.View.GONE
+                hideOverlayToStandby()
             }
         )
 
@@ -284,8 +312,8 @@ class FloatingBubbleService : Service() {
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     handler.removeCallbacks(autoCollapseRunnable)
-                    initialX = params.x
-                    initialY = params.y
+                    initialX = windowParams.x
+                    initialY = windowParams.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
                     triggerFetch()
@@ -301,10 +329,10 @@ class FloatingBubbleService : Service() {
                         val maxX = (screenWidth - sizePx).coerceAtLeast(0)
                         val maxY = (screenHeight - sizePx).coerceAtLeast(0)
 
-                        params.x = newX.coerceIn(0, maxX)
-                        params.y = newY.coerceIn(0, maxY)
+                        windowParams.x = newX.coerceIn(0, maxX)
+                        windowParams.y = newY.coerceIn(0, maxY)
 
-                        windowManager?.updateViewLayout(overlayView, params)
+                        windowManager?.updateViewLayout(overlayView, windowParams)
                     }
                     true
                 }
@@ -323,7 +351,7 @@ class FloatingBubbleService : Service() {
             }
         }
 
-        windowManager?.addView(overlayView, params)
+        windowManager?.addView(overlayView, windowParams)
 
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
@@ -349,10 +377,7 @@ class FloatingBubbleService : Service() {
 
                 if (isNewOrder || isStationChanged || forceExpandOnFirstLoad) {
                     handler.post {
-                        playStationTransitionAlert()
-                        overlayView?.toggleCard(true)
-                        handler.removeCallbacks(autoCollapseRunnable)
-                        handler.postDelayed(autoCollapseRunnable, 5500)
+                        unhideOverlayToScreen(expand = true)
                     }
                 }
                 lastKnownStation = data.station
