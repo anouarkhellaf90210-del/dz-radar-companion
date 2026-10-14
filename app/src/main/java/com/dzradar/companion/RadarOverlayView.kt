@@ -297,7 +297,7 @@ class RadarOverlayView(
         }
 
         val closeBtn = TextView(context).apply {
-            text = "إخفاء ✕"
+            text = "تصغير النافذة ✕"
             setTextColor(Color.parseColor("#A1A1AA"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
             gravity = Gravity.CENTER
@@ -307,7 +307,7 @@ class RadarOverlayView(
                 setStroke(dp(1), Color.parseColor("#27272A"))
             }
             setPadding(dp(14), dp(8), dp(14), dp(8))
-            setOnClickListener { onCloseCompanion() }
+            setOnClickListener { toggleCard(false) }
         }
 
         actionsRow.addView(openStoreBtn)

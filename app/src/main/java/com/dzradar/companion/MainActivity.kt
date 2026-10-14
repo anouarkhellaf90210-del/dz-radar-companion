@@ -150,7 +150,7 @@ class MainActivity : Activity() {
             putExtra("expand", true)
         }
         startService(serviceIntent)
-        finish()
+        finishAndRemoveTask()
     }
 
     private fun dp(value: Int): Int {
