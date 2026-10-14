@@ -147,6 +147,7 @@ class MainActivity : Activity() {
         val serviceIntent = Intent(this, FloatingBubbleService::class.java).apply {
             putExtra("token", getSavedToken())
             putExtra("store_url", getSavedStoreUrl())
+            putExtra("expand", true)
         }
         startService(serviceIntent)
         finish()

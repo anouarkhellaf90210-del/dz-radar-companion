@@ -33,9 +33,8 @@ object RadarApiClient {
     }
 
     fun fetchOrder(token: String): RadarOrderState? {
-        if (token.isBlank() || token == "SENTINEL-IDLE") return null
+        val cleanToken = if (token.isBlank() || token == "SENTINEL-IDLE" || token == "DEMO-TRACK-DZ") "latest" else token.trim()
         return try {
-            val cleanToken = token.trim()
             val encodedToken = URLEncoder.encode(cleanToken, "UTF-8")
             val endpoint = "$baseOrigin/api/orders/track/$encodedToken?_cb=${System.currentTimeMillis()}"
             val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
@@ -56,7 +55,11 @@ object RadarApiClient {
                 val resolvedToken = orderObj.optString("tracking_token", root.optString("tracking_token", cleanToken)).ifBlank { cleanToken }
                 val rawStatus = orderObj.optString("status", root.optString("status", "pending")).lowercase().trim()
                 val slug = orderObj.optString("store_slug", root.optString("store_slug", "dzball")).ifBlank { "dzball" }
-                val sName = orderObj.optString("store_name", root.optString("store_name", "متجر $slug")).ifBlank { "متجر Dzball" }
+
+                var sName = orderObj.optString("store_name", root.optString("store_name", "")).trim()
+                if (sName.isBlank() || sName.equals("Dzball", ignoreCase = true)) {
+                    sName = "Marik"
+                }
 
                 val resolvedUrl = "$baseOrigin/s/$slug"
                 latestStoreUrl = resolvedUrl
@@ -69,10 +72,10 @@ object RadarApiClient {
                 }
 
                 val (title, subtitle) = when (station) {
-                    4 -> "تم التسليم بنجاح" to "وصل طردك بأمان، تتهنى به!"
-                    3 -> "خرج للتوصيل" to "طردك الآن في مركبة التوصيل متجه إليك"
-                    2 -> "تم التأكيد والتجهيز" to "تم توثيق طلبك ويجري تغليفه بعناية"
-                    else -> "قيد التأكيد والمراجعة" to "تم تسجيل طلبك وهو قيد المراجعة"
+                    4 -> "طردك: تم التسليم 🤝" to "وصل طردك بأمان، تتهنى به!"
+                    3 -> "طردك: في الطريق إليك 🚚" to "طردك الآن مع الموزع متجه إليك"
+                    2 -> "طردك: قيد التجهيز 📦" to "يجري فرز وتغليف طردك بمستودعنا"
+                    else -> "طردك: مُستلم ⚡" to "تم تسجيل وتثبيت طلبيتك بنجاح"
                 }
 
                 RadarOrderState(
@@ -80,7 +83,7 @@ object RadarApiClient {
                     station = station,
                     statusTitle = title,
                     statusSubtitle = subtitle,
-                    storeName = sName,
+                    storeName = "متجر $sName",
                     storeUrl = resolvedUrl
                 )
             } else {

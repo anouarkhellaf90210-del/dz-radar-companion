@@ -31,7 +31,8 @@ class FloatingBubbleService : Service() {
 
     private var windowManager: WindowManager? = null
     private var overlayView: RadarOverlayView? = null
-    private var trackingToken: String = "SENTINEL-IDLE"
+    private var trackingToken: String = "latest"
+    private var lastResolvedOrderToken: String = ""
     private var targetStoreUrl: String = ""
     private var lastKnownStation: Int = 0
     private var localServer: ServerSocket? = null
@@ -60,7 +61,7 @@ class FloatingBubbleService : Service() {
             if (isScreenOn) {
                 triggerFetch()
             }
-            handler.postDelayed(this, 4000)
+            handler.postDelayed(this, 3500)
         }
     }
 
@@ -70,14 +71,12 @@ class FloatingBubbleService : Service() {
         val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
 
         val incomingToken = intent?.getStringExtra("token")
-        if (!incomingToken.isNullOrBlank() && incomingToken != "DEMO-TRACK-DZ") {
+        if (!incomingToken.isNullOrBlank() && incomingToken != "SENTINEL-IDLE" && incomingToken != "DEMO-TRACK-DZ") {
             trackingToken = incomingToken.trim()
             prefs.edit().putString("last_token", trackingToken).apply()
-        } else if (trackingToken == "SENTINEL-IDLE") {
-            val saved = prefs.getString("last_token", "SENTINEL-IDLE") ?: "SENTINEL-IDLE"
-            if (saved != "DEMO-TRACK-DZ") {
-                trackingToken = saved
-            }
+        } else {
+            val saved = prefs.getString("last_token", "latest") ?: "latest"
+            trackingToken = if (saved == "SENTINEL-IDLE" || saved == "DEMO-TRACK-DZ") "latest" else saved
         }
 
         val incomingUrl = intent?.getStringExtra("store_url")
@@ -92,20 +91,35 @@ class FloatingBubbleService : Service() {
             }
         }
 
-        triggerFetch()
+        val shouldExpand = intent?.getBooleanExtra("expand", false) ?: false
+        if (shouldExpand) {
+            handler.postDelayed({
+                playStationTransitionAlert()
+                overlayView?.toggleCard(true)
+                handler.removeCallbacks(autoCollapseRunnable)
+                handler.postDelayed(autoCollapseRunnable, 6000)
+            }, 250)
+        }
+
+        triggerFetch(forceExpandOnFirstLoad = shouldExpand)
         return START_STICKY
     }
 
     private fun resolveDestinationUrl(): String {
-        if (targetStoreUrl.isNotBlank() && targetStoreUrl.startsWith("http") && targetStoreUrl.contains("/s/")) {
-            return targetStoreUrl
+        val base = when {
+            targetStoreUrl.isNotBlank() && targetStoreUrl.startsWith("http") && targetStoreUrl.contains("/s/") -> targetStoreUrl
+            else -> {
+                val savedUrl = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
+                    .getString("last_store_url", "") ?: ""
+                if (savedUrl.isNotBlank() && savedUrl.startsWith("http") && savedUrl.contains("/s/")) {
+                    savedUrl
+                } else {
+                    RadarApiClient.latestStoreUrl
+                }
+            }
         }
-        val savedUrl = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
-            .getString("last_store_url", "") ?: ""
-        if (savedUrl.isNotBlank() && savedUrl.startsWith("http") && savedUrl.contains("/s/")) {
-            return savedUrl
-        }
-        return RadarApiClient.latestStoreUrl
+        val cleanBase = base.split("?")[0]
+        return "$cleanBase?native_bubble=1"
     }
 
     private fun playMicroTapHaptic() {
@@ -124,19 +138,19 @@ class FloatingBubbleService : Service() {
         try {
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 60, 50, 90), -1))
+                vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 70, 50, 100), -1))
             } else {
                 @Suppress("DEPRECATION")
-                vibrator?.vibrate(140)
+                vibrator?.vibrate(160)
             }
         } catch (_: Exception) {}
 
         try {
-            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 75)
-            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 180)
+            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
+            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 200)
             handler.postDelayed({
                 try { toneGen.release() } catch (_: Exception) {}
-            }, 250)
+            }, 260)
         } catch (_: Exception) {}
     }
 
@@ -157,7 +171,9 @@ class FloatingBubbleService : Service() {
                                 headerLine = reader.readLine()
                             }
 
-                            if (reqLine.contains("/sync")) {
+                            val isOptions = reqLine.startsWith("OPTIONS ")
+
+                            if (!isOptions && reqLine.contains("/sync")) {
                                 val qStart = reqLine.indexOf("?")
                                 val qEnd = reqLine.indexOf(" HTTP/")
                                 if (qStart != -1 && qEnd > qStart) {
@@ -168,7 +184,7 @@ class FloatingBubbleService : Service() {
                                         if (kv.size == 2) {
                                             val k = URLDecoder.decode(kv[0], "UTF-8")
                                             val v = URLDecoder.decode(kv[1], "UTF-8")
-                                            if (k == "token" && v.isNotBlank() && v != "ACTIVE-ORDER" && v != "DEMO-TRACK-DZ") {
+                                            if (k == "token" && v.isNotBlank() && v != "ACTIVE-ORDER" && v != "DEMO-TRACK-DZ" && v != "SENTINEL-IDLE") {
                                                 trackingToken = v.trim()
                                                 prefs.putString("last_token", trackingToken)
                                             } else if (k == "store_url" && v.startsWith("http")) {
@@ -184,9 +200,9 @@ class FloatingBubbleService : Service() {
                             }
 
                             val writer = OutputStreamWriter(client.getOutputStream(), "UTF-8")
-                            val body = "{\"active\":true,\"version\":\"1.0.9\",\"token\":\"$trackingToken\",\"station\":$lastKnownStation}"
+                            val body = if (isOptions) "" else "{\"active\":true,\"version\":\"1.1.1\",\"token\":\"$trackingToken\",\"station\":$lastKnownStation}"
                             val bodyBytes = body.toByteArray(Charsets.UTF_8)
-                            writer.write("HTTP/1.1 200 OK\r\n")
+                            writer.write(if (isOptions) "HTTP/1.1 204 No Content\r\n" else "HTTP/1.1 200 OK\r\n")
                             writer.write("Content-Type: application/json; charset=utf-8\r\n")
                             writer.write("Access-Control-Allow-Origin: *\r\n")
                             writer.write("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n")
@@ -194,7 +210,9 @@ class FloatingBubbleService : Service() {
                             writer.write("Access-Control-Allow-Private-Network: true\r\n")
                             writer.write("Content-Length: ${bodyBytes.size}\r\n")
                             writer.write("Connection: close\r\n\r\n")
-                            writer.write(body)
+                            if (!isOptions) {
+                                writer.write(body)
+                            }
                             writer.flush()
                             client.close()
                         } catch (_: Exception) {
@@ -213,7 +231,7 @@ class FloatingBubbleService : Service() {
 
         val density = resources.displayMetrics.density
         val sizePx = (44 * density).toInt()
-        val tapSlopPx = 5f * density // Strict < 5dp movement threshold for Instant 1-Tap
+        val tapSlopPx = 5f * density
 
         val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -313,21 +331,24 @@ class FloatingBubbleService : Service() {
         handler.post(pollingRunnable)
     }
 
-    private fun triggerFetch() {
-        if (trackingToken.isBlank() || trackingToken == "SENTINEL-IDLE") return
+    private fun triggerFetch(forceExpandOnFirstLoad: Boolean = false) {
         Thread {
-            val data = RadarApiClient.fetchOrder(trackingToken)
+            val data = RadarApiClient.fetchOrder("latest") ?: RadarApiClient.fetchOrder(trackingToken)
             if (data != null) {
+                val isNewOrder = lastResolvedOrderToken.isNotBlank() && lastResolvedOrderToken != data.trackingToken
+                val isStationChanged = lastKnownStation != 0 && lastKnownStation != data.station
+
                 if (data.trackingToken.isNotBlank()) {
                     trackingToken = data.trackingToken
+                    lastResolvedOrderToken = data.trackingToken
                 }
-                val prevStation = lastKnownStation
-                if (prevStation != 0 && prevStation != data.station) {
+
+                if (isNewOrder || isStationChanged || forceExpandOnFirstLoad) {
                     handler.post {
                         playStationTransitionAlert()
                         overlayView?.toggleCard(true)
                         handler.removeCallbacks(autoCollapseRunnable)
-                        handler.postDelayed(autoCollapseRunnable, 4500)
+                        handler.postDelayed(autoCollapseRunnable, 5500)
                     }
                 }
                 lastKnownStation = data.station
