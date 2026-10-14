@@ -81,7 +81,7 @@ class RadarOverlayView(
 
         // الأيقونة الابتدائية: منارة السكينة واليقظة (Sentinel Beacon)
         bubbleIcon = TextView(context).apply {
-            text = "💠"
+            text = "🛍️"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             gravity = Gravity.CENTER
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
@@ -184,7 +184,7 @@ class RadarOverlayView(
         }
 
         currentStatusTitle = TextView(context).apply {
-            text = "رادار السكينة واليقظة نشط"
+            text = "متابعة الطلب المباشرة"
             setTextColor(Color.parseColor("#38BDF8"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
             typeface = Typeface.DEFAULT_BOLD
@@ -327,7 +327,7 @@ class RadarOverlayView(
             2 -> Triple("🎁", "#A855F7", "#22A855F7") // تم التأكيد والتجهيز
             3 -> Triple("🚚", "#10B981", "#2210B981") // خرج للتوصيل
             4 -> Triple("✅", "#34D399", "#2234D399") // تم الاستلام
-            else -> Triple("💠", "#38BDF8", "#2238BDF8") // رادار السكينة واليقظة الابتدائي
+            else -> Triple("🛍️", "#D4AF37", "#22D4AF37") // رادار السكينة واليقظة الابتدائي
         }
     }
 
