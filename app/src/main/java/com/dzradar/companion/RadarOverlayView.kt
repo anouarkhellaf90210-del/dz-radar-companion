@@ -19,7 +19,8 @@ import android.widget.TextView
 class RadarOverlayView(
     context: Context,
     private val onOpenStore: () -> Unit,
-    private val onCloseCompanion: () -> Unit
+    private val onKillCompanion: () -> Unit, // Red 'X' kills service completely
+    private val onHideOverlay: () -> Unit     // "إخفاء من الشاشة" keeps service running in standby
 ) : FrameLayout(context) {
 
     private val uiHandler = Handler(Looper.getMainLooper())
@@ -30,7 +31,7 @@ class RadarOverlayView(
     private val livePingDot: View
     private val livePingDrawable: GradientDrawable
 
-    private val cardContainer: LinearLayout
+    val cardContainer: LinearLayout
     private val cardBorderDrawable: GradientDrawable
     private val headerPingDot: View
     private val headerPingDrawable: GradientDrawable
@@ -38,14 +39,12 @@ class RadarOverlayView(
     private val currentStatusTitle: TextView
     private val currentStatusSubtitle: TextView
 
-    private val stationNodes = mutableListOf<FrameLayout>()
     private val stationNodeDrawables = mutableListOf<GradientDrawable>()
-    private val stationNodeIcons = mutableListOf<TextView>()
     private val stationLabels = mutableListOf<TextView>()
     private val connectorLines = mutableListOf<View>()
 
     private var cardOpen = false
-    private var currentStation = 0 // 0 = Sentinel Beacon Initial State
+    private var currentStation = 0
 
     private fun dp(v: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
@@ -58,13 +57,13 @@ class RadarOverlayView(
 
         bubbleOuterHalo = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(Color.parseColor("#2238BDF8"))
+            setColor(Color.parseColor("#22D4AF37"))
         }
 
         bubbleRing = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(Color.parseColor("#09090B"))
-            setStroke(dp(2), Color.parseColor("#38BDF8"))
+            setStroke(dp(2), Color.parseColor("#D4AF37"))
         }
 
         bubbleContainer = FrameLayout(context).apply {
@@ -79,7 +78,6 @@ class RadarOverlayView(
             background = bubbleRing
         }
 
-        // الأيقونة الابتدائية: منارة السكينة واليقظة (Sentinel Beacon)
         bubbleIcon = TextView(context).apply {
             text = "🛍️"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
@@ -91,7 +89,7 @@ class RadarOverlayView(
 
         livePingDrawable = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(Color.parseColor("#38BDF8"))
+            setColor(Color.parseColor("#D4AF37"))
             setStroke(dp(1), Color.parseColor("#09090B"))
         }
 
@@ -105,11 +103,10 @@ class RadarOverlayView(
         }
         bubbleContainer.addView(livePingDot)
 
-        // بطاقة التتبع المطابقة بصرياً لنافذة المتصفح (LiveOrderRadarModal)
         cardBorderDrawable = GradientDrawable().apply {
             setColor(Color.parseColor("#F709090B"))
             cornerRadius = dp(22).toFloat()
-            setStroke(dp(1), Color.parseColor("#4438BDF8"))
+            setStroke(dp(1), Color.parseColor("#55D4AF37"))
         }
 
         cardContainer = LinearLayout(context).apply {
@@ -122,9 +119,13 @@ class RadarOverlayView(
             layoutParams = LinearLayout.LayoutParams(dp(276), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(8)
             }
+            // Clicking anywhere on the card background folds it back to the bubble!
+            setOnClickListener {
+                toggleCard(false)
+            }
         }
 
-        // شريط الرأس (Header: Live Ping + Title + Store Badge)
+        // Top Row: Red Kill 'X' Button + Title + Store Badge
         val topRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -133,7 +134,7 @@ class RadarOverlayView(
 
         headerPingDrawable = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(Color.parseColor("#38BDF8"))
+            setColor(Color.parseColor("#D4AF37"))
         }
 
         headerPingDot = View(context).apply {
@@ -146,29 +147,50 @@ class RadarOverlayView(
         val modalHeaderTitle = TextView(context).apply {
             text = "رادار تتبع الطرد الحي"
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
         storeBadgeText = TextView(context).apply {
-            text = "متجر Dzball"
-            setTextColor(Color.parseColor("#A1A1AA"))
+            text = "متجر Marik"
+            setTextColor(Color.parseColor("#FDE68A"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#18181B"))
                 cornerRadius = dp(8).toFloat()
-                setStroke(dp(1), Color.parseColor("#27272A"))
+                setStroke(dp(1), Color.parseColor("#D4AF37"))
             }
-            setPadding(dp(8), dp(3), dp(8), dp(3))
+            setPadding(dp(7), dp(3), dp(7), dp(3))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                leftMargin = dp(8)
+            }
+        }
+
+        // Red 'X' Button: Kills Service completely
+        val killRedXBtn = TextView(context).apply {
+            text = "✕"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#DC2626"))
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+            setOnClickListener {
+                onKillCompanion()
+            }
         }
 
         topRow.addView(headerPingDot)
         topRow.addView(modalHeaderTitle)
         topRow.addView(storeBadgeText)
+        topRow.addView(killRedXBtn)
         cardContainer.addView(topRow)
 
-        // صندوق الحالة النشطة (Active Station Hero Banner)
+        // Status Banner
         val statusHeroBox = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -181,11 +203,13 @@ class RadarOverlayView(
                 topMargin = dp(10)
                 bottomMargin = dp(12)
             }
+            // Allow clicking to fold
+            setOnClickListener { toggleCard(false) }
         }
 
         currentStatusTitle = TextView(context).apply {
             text = "متابعة الطلب المباشرة"
-            setTextColor(Color.parseColor("#38BDF8"))
+            setTextColor(Color.parseColor("#D4AF37"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
             typeface = Typeface.DEFAULT_BOLD
         }
@@ -203,11 +227,12 @@ class RadarOverlayView(
         statusHeroBox.addView(currentStatusSubtitle)
         cardContainer.addView(statusHeroBox)
 
-        // شريط محطات الشحن الأربع المطابق للمتصفح (4-Station Stepper Track)
+        // 4-Station Stepper
         val stepperTrackRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            setOnClickListener { toggleCard(false) }
         }
 
         val icons = listOf("⏳", "🎁", "🚚", "✅")
@@ -230,9 +255,7 @@ class RadarOverlayView(
                 gravity = Gravity.CENTER
                 layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
             }
-            stationNodeIcons.add(iconTv)
             nodeFrame.addView(iconTv)
-            stationNodes.add(nodeFrame)
             stepperTrackRow.addView(nodeFrame)
 
             if (i < 3) {
@@ -249,13 +272,13 @@ class RadarOverlayView(
         }
         cardContainer.addView(stepperTrackRow)
 
-        // مسميات المحطات الأربع تحت الأيقونات
         val labelsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(6)
                 bottomMargin = dp(14)
             }
+            setOnClickListener { toggleCard(false) }
         }
 
         val titles = listOf("قيد التأكيد", "تم التجهيز", "خرج للتوصيل", "تم الاستلام")
@@ -272,7 +295,7 @@ class RadarOverlayView(
         }
         cardContainer.addView(labelsRow)
 
-        // أزرار التحكم السفلية النظيفة
+        // Actions Row: [العودة للمتجر 🌐] + [إخفاء من الشاشة 👁️]
         val actionsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -282,52 +305,54 @@ class RadarOverlayView(
         val openStoreBtn = TextView(context).apply {
             text = "العودة للمتجر 🌐"
             setTextColor(Color.parseColor("#052E16"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#10B981"))
                 cornerRadius = dp(12).toFloat()
             }
-            setPadding(dp(14), dp(8), dp(14), dp(8))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                leftMargin = dp(8)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
+                leftMargin = dp(6)
             }
             setOnClickListener { onOpenStore() }
         }
 
-        val closeBtn = TextView(context).apply {
-            text = "تصغير النافذة ✕"
-            setTextColor(Color.parseColor("#A1A1AA"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+        val hideStandbyBtn = TextView(context).apply {
+            text = "إخفاء من الشاشة 👁️"
+            setTextColor(Color.parseColor("#D4D4D8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#18181B"))
+                setColor(Color.parseColor("#27272A"))
                 cornerRadius = dp(12).toFloat()
-                setStroke(dp(1), Color.parseColor("#27272A"))
+                setStroke(dp(1), Color.parseColor("#3F3F46"))
             }
-            setPadding(dp(14), dp(8), dp(14), dp(8))
-            setOnClickListener { toggleCard(false) }
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.1f)
+            setOnClickListener { onHideOverlay() }
         }
 
         actionsRow.addView(openStoreBtn)
-        actionsRow.addView(closeBtn)
+        actionsRow.addView(hideStandbyBtn)
         cardContainer.addView(actionsRow)
 
         rootLayout.addView(bubbleContainer)
         rootLayout.addView(cardContainer)
         addView(rootLayout)
 
-        applyStationVisuals(0, animateMorph = false)
+        applyStationVisuals(1, animateMorph = false)
     }
 
     private fun resolveStationTheme(station: Int): Triple<String, String, String> {
         return when (station) {
-            1 -> Triple("⏳", "#FBBF24", "#22FBBF24") // قيد التأكيد
-            2 -> Triple("🎁", "#A855F7", "#22A855F7") // تم التأكيد والتجهيز
-            3 -> Triple("🚚", "#10B981", "#2210B981") // خرج للتوصيل
-            4 -> Triple("✅", "#34D399", "#2234D399") // تم الاستلام
-            else -> Triple("🛍️", "#D4AF37", "#22D4AF37") // رادار السكينة واليقظة الابتدائي
+            1 -> Triple("⏳", "#FBBF24", "#22FBBF24")
+            2 -> Triple("🎁", "#A855F7", "#22A855F7")
+            3 -> Triple("🚚", "#10B981", "#2210B981")
+            4 -> Triple("✅", "#34D399", "#2234D399")
+            else -> Triple("🛍️", "#D4AF37", "#22D4AF37")
         }
     }
 
@@ -378,7 +403,6 @@ class RadarOverlayView(
             val stepNum = i + 1
             val isCompleted = station >= stepNum && station > 0
             val isCurrent = station == stepNum
-
             val nodeDrawable = stationNodeDrawables[i]
             val lbl = stationLabels[i]
 

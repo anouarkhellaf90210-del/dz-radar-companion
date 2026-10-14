@@ -262,8 +262,12 @@ class FloatingBubbleService : Service() {
                 }
                 startActivity(browserIntent)
             },
-            onCloseCompanion = {
+            onKillCompanion = {
                 stopSelf()
+            },
+            onHideOverlay = {
+                overlayView?.toggleCard(false)
+                overlayView?.visibility = android.view.View.GONE
             }
         )
 
