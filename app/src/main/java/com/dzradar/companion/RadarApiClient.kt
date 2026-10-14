@@ -58,10 +58,11 @@ object RadarApiClient {
                 val slug = orderObj.optString("store_slug", root.optString("store_slug", "dzball")).ifBlank { "dzball" }
 
                 var sName = orderObj.optString("store_name", root.optString("store_name", "")).trim()
-                if (sName.isBlank() || sName.equals("Dzball", ignoreCase = true)) {
+                if (sName.isBlank() || sName.equals("Dzball", ignoreCase = true) || sName.equals("Marik", ignoreCase = true)) {
                     sName = "Patron"
                 }
 
+                val sLogo = orderObj.optString("store_logo", root.optString("store_logo", "")).trim()
                 val resolvedUrl = "$baseOrigin/s/$slug"
                 latestStoreUrl = resolvedUrl
 
@@ -85,7 +86,7 @@ object RadarApiClient {
                     statusTitle = title,
                     statusSubtitle = subtitle,
                     storeName = "متجر $sName",
-                    storeLogoUrl = orderObj.optString("store_logo", root.optString("store_logo", "")).trim(),
+                    storeLogoUrl = sLogo,
                     storeUrl = resolvedUrl
                 )
             } else {

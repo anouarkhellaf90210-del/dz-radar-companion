@@ -3,7 +3,14 @@ package com.dzradar.companion
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
@@ -13,16 +20,9 @@ import android.view.Gravity
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.ImageView
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
-import android.graphics.Rect
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -48,6 +48,7 @@ class RadarOverlayView(
     private val storeBadgeContainer: LinearLayout
     private val storeLogoImg: ImageView
     private val storeBadgeText: TextView
+    private val killRedXBtn: TextView
     private val currentStatusTitle: TextView
     private val currentStatusSubtitle: TextView
 
@@ -57,12 +58,11 @@ class RadarOverlayView(
 
     private var cardOpen = false
     private var currentStation = 0
+    private var lastLoadedLogoUrl = ""
 
     private fun dp(v: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
-    
-    private var lastLoadedLogoUrl = ""
     private fun getCircularBitmap(bitmap: Bitmap): Bitmap {
         val size = Math.min(bitmap.width, bitmap.height)
         val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
@@ -80,8 +80,8 @@ class RadarOverlayView(
         Thread {
             try {
                 val conn = URL(urlStr).openConnection() as HttpURLConnection
-                conn.connectTimeout = 3000
-                conn.readTimeout = 3000
+                conn.connectTimeout = 4000
+                conn.readTimeout = 4000
                 conn.doInput = true
                 conn.connect()
                 val bmp = BitmapFactory.decodeStream(conn.inputStream)
@@ -168,13 +168,9 @@ class RadarOverlayView(
             layoutParams = LinearLayout.LayoutParams(dp(276), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(8)
             }
-            // النقر على مساحة فارغة في البطاقة يطويها لتعود كبسولة مصغرة
-            setOnClickListener {
-                toggleCard(false)
-            }
+            setOnClickListener { toggleCard(false) }
         }
 
-        // شريط الرأس: زر الإغلاق النهائي الأحمر الصغير + العنوان + اسم المتجر
         val topRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -233,13 +229,26 @@ class RadarOverlayView(
         storeBadgeContainer.addView(storeLogoImg)
         storeBadgeContainer.addView(storeBadgeText)
 
+        killRedXBtn = TextView(context).apply {
+            text = "✕"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#DC2626"))
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+            setOnClickListener { onKillCompanion() }
+        }
+
         topRow.addView(headerPingDot)
         topRow.addView(modalHeaderTitle)
         topRow.addView(storeBadgeContainer)
         topRow.addView(killRedXBtn)
         cardContainer.addView(topRow)
 
-        // لوحة الحالة
         val statusHeroBox = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -275,7 +284,6 @@ class RadarOverlayView(
         statusHeroBox.addView(currentStatusSubtitle)
         cardContainer.addView(statusHeroBox)
 
-        // شريط المحطات الأربع
         val stepperTrackRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -343,7 +351,6 @@ class RadarOverlayView(
         }
         cardContainer.addView(labelsRow)
 
-        // شريط الأزرار: [العودة للمتجر 🌐] + [إخفاء من الشاشة 👁️]
         val actionsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -508,10 +515,12 @@ class RadarOverlayView(
             val shouldAnimate = currentStation != data.station
             currentStation = data.station
             storeBadgeText.text = data.storeName
-            if (data.storeLogoUrl.isNotBlank()) { loadStoreLogoAsync(data.storeLogoUrl) }
             currentStatusTitle.text = data.statusTitle
             currentStatusSubtitle.text = data.statusSubtitle
             applyStationVisuals(data.station, animateMorph = shouldAnimate)
+            if (data.storeLogoUrl.isNotBlank()) {
+                loadStoreLogoAsync(data.storeLogoUrl)
+            }
         }
     }
 }
