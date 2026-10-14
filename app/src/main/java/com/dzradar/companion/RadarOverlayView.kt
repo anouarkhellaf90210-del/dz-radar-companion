@@ -337,7 +337,7 @@ class RadarOverlayView(
             }
             setOnClickListener {
                 if (currentActiveOrderId.isNotBlank()) {
-                    merchantAdvanceBtn.text = "⏳ جاري تحديث حالة الطلب..."
+                    this@apply.text = "⏳ جاري تحديث حالة الطلب..."
                     onAdvanceOrder(currentActiveOrderId)
                 }
             }
