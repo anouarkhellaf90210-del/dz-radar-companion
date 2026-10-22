@@ -40,6 +40,9 @@ class FloatingBubbleService : Service() {
     private var lastMerchantNewCount: Int = -1
     private var targetStoreUrl: String = ""
     private var lastKnownStation: Int = 0
+    private var lastKnownStatusTitle: String = ""
+    @Volatile private var isOverlayInStandby: Boolean = false
+    private var windowLayoutParams: WindowManager.LayoutParams? = null
     private var localServer: ServerSocket? = null
     @Volatile private var isRunning = true
 
@@ -303,6 +306,7 @@ class FloatingBubbleService : Service() {
             onHideOverlay = {
                 overlayView?.toggleCard(false)
                 overlayView?.visibility = View.GONE
+                isOverlayInStandby = true
             },
             onAdvanceOrder = { orderId ->
                 playMicroTapHaptic()
@@ -396,6 +400,7 @@ class FloatingBubbleService : Service() {
             }
         }
 
+        windowLayoutParams = params
         windowManager?.addView(overlayView, params)
 
         val filter = IntentFilter().apply {
@@ -433,19 +438,40 @@ class FloatingBubbleService : Service() {
                 return@Thread
             }
 
-            val data = RadarApiClient.fetchOrder("latest") ?: RadarApiClient.fetchOrder(trackingToken)
+            val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
+            val tokenToFetch = when {
+                trackingToken.isNotBlank() && trackingToken != "latest" && trackingToken != "SENTINEL-IDLE" && trackingToken != "DEMO-TRACK-DZ" -> trackingToken
+                else -> {
+                    val saved = prefs.getString("last_token", "latest") ?: "latest"
+                    if (saved != "SENTINEL-IDLE" && saved != "DEMO-TRACK-DZ") saved else "latest"
+                }
+            }
+
+            val data = RadarApiClient.fetchOrder(tokenToFetch) ?: (if (tokenToFetch != "latest") RadarApiClient.fetchOrder("latest") else null)
             if (data != null) {
                 val isNewOrder = lastResolvedOrderToken.isNotBlank() && lastResolvedOrderToken != data.trackingToken
                 val isStationChanged = lastKnownStation != 0 && lastKnownStation != data.station
+                val isStatusChanged = lastKnownStatusTitle.isNotBlank() && lastKnownStatusTitle != data.statusTitle
+                val isEmergenceNeeded = isNewOrder || isStationChanged || isStatusChanged || forceExpandOnFirstLoad || (isOverlayInStandby && (isStationChanged || isStatusChanged))
 
-                if (data.trackingToken.isNotBlank()) {
+                if (tokenToFetch != "latest" && data.trackingToken.isNotBlank()) {
                     trackingToken = data.trackingToken
+                    lastResolvedOrderToken = data.trackingToken
+                    prefs.edit().putString("last_token", trackingToken).apply()
+                } else if (trackingToken == "latest" && data.trackingToken.isNotBlank()) {
                     lastResolvedOrderToken = data.trackingToken
                 }
 
-                if (isNewOrder || isStationChanged || forceExpandOnFirstLoad) {
+                if (isEmergenceNeeded) {
+                    isOverlayInStandby = false
                     handler.post {
                         overlayView?.visibility = View.VISIBLE
+                        overlayView?.requestLayout()
+                        windowLayoutParams?.let { lp ->
+                            try {
+                                windowManager?.updateViewLayout(overlayView, lp)
+                            } catch (_: Exception) {}
+                        }
                         playStationTransitionAlert()
                         overlayView?.toggleCard(true)
                         handler.removeCallbacks(autoCollapseRunnable)
@@ -453,6 +479,7 @@ class FloatingBubbleService : Service() {
                     }
                 }
                 lastKnownStation = data.station
+                lastKnownStatusTitle = data.statusTitle
                 overlayView?.updateData(data)
             }
         }.start()

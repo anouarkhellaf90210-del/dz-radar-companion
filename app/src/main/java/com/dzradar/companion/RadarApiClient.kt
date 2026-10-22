@@ -34,7 +34,8 @@ object RadarApiClient {
         if (url.startsWith("http")) {
             try {
                 val parsed = URL(url)
-                baseOrigin = "${parsed.protocol}://${parsed.host}"
+                val portPart = if (parsed.port != -1 && parsed.port != 80 && parsed.port != 443) ":${parsed.port}" else ""
+                baseOrigin = "${parsed.protocol}://${parsed.host}$portPart"
                 if (url.contains("/s/")) {
                     latestStoreUrl = url.split("?")[0]
                 }
@@ -75,11 +76,16 @@ object RadarApiClient {
                 val resolvedUrl = "$baseOrigin/s/$slug"
                 latestStoreUrl = resolvedUrl
 
-                val station = when (rawStatus) {
-                    "delivered", "completed", "received", "paid" -> 4
-                    "out_for_delivery", "shipped", "in_transit", "dispatched", "with_courier", "delivering" -> 3
-                    "confirmed", "processing", "preparing", "packaged", "ready_for_dispatch", "ready_to_ship", "assigned" -> 2
-                    else -> 1
+                val serverStation = orderObj.optInt("station", root.optInt("station", 0))
+                val station = if (serverStation in 1..4) {
+                    serverStation
+                } else {
+                    when (rawStatus) {
+                        "delivered", "completed", "received", "paid" -> 4
+                        "out_for_delivery", "shipped", "in_transit", "dispatched", "with_courier", "delivering" -> 3
+                        "confirmed", "processing", "preparing", "packaged", "ready_for_dispatch", "ready_to_ship", "assigned" -> 2
+                        else -> 1
+                    }
                 }
 
                 val (title, subtitle) = when (station) {
