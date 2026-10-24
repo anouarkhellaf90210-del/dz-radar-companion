@@ -5,43 +5,32 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
-import android.provider.Settings
-import android.net.Uri
 import android.widget.Toast
 
 class StoreSourceReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -1)) {
+        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                @Suppress("DEPRECATION")
-                val confirmIntent = if (Build.VERSION.SDK_INT >= 33) {
+                val confirmIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
                 } else {
-                    intent.getParcelableExtra(Intent.EXTRA_INTENT) as? Intent
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_INTENT)
                 }
                 if (confirmIntent != null) {
                     confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    try {
-                        context.startActivity(confirmIntent)
-                    } catch (_: Exception) {}
+                    context.startActivity(confirmIntent)
                 }
             }
             PackageInstaller.STATUS_SUCCESS -> {
                 Toast.makeText(
                     context,
-                    "✅ تم توثيق التطبيق كمصدر متجر رسمي! يمكنك الآن تفعيل الظهور فوق التطبيقات مباشرة.",
+                    "✅ تم التثبيت بصفة متجر رسمي (PACKAGE_SOURCE_STORE) بدون قيود!",
                     Toast.LENGTH_LONG
                 ).show()
-                try {
-                    val overlayIntent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:${context.packageName}")
-                    ).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(overlayIntent)
-                } catch (_: Exception) {}
             }
+            else -> {}
         }
     }
 }

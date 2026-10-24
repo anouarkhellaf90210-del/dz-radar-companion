@@ -36,8 +36,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add app/dz-radar-release.jks
-          git commit -m "chore(security): lock permanent release keystore [skip ci]"
-          git push origin HEAD:main
+          git commit -m "chore(security): lock permanent release keystore [skip ci]" || true
+          git push origin HEAD:main || true
         fi
 
     - name: Setup Gradle
@@ -55,8 +55,8 @@ jobs:
     - name: Publish Signed Release APK
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v1.3.0
-        name: "DZ Radar Companion v1.3.0 (Signed Official Release)"
+        tag_name: v1.4.0
+        name: "DZ Radar Companion v1.4.0 (Signed Official Release)"
         draft: false
         prerelease: false
         files: release-artifacts/*.apk

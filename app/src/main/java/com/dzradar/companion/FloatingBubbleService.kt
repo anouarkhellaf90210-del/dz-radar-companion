@@ -401,7 +401,11 @@ class FloatingBubbleService : Service() {
         }
 
         windowLayoutParams = params
-        windowManager?.addView(overlayView, params)
+        try {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M || android.provider.Settings.canDrawOverlays(this)) {
+                windowManager?.addView(overlayView, params)
+            }
+        } catch (_: Exception) {}
 
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)

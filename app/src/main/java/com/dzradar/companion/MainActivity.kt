@@ -7,7 +7,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
-import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
@@ -23,81 +22,73 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.io.File
 import java.io.FileInputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : Activity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var isWatchingPermission = false
-    private lateinit var fullRootScroll: ScrollView
-    private lateinit var pipRootContainer: LinearLayout
-    private lateinit var pipStatusTitle: TextView
-    private lateinit var pipStatusSubtitle: TextView
-    private lateinit var pipStoreBadge: TextView
-    private var embeddedRadarView: RadarOverlayView? = null
+    private var isInPipMode = false
+    private lateinit var pipLiveStatusText: TextView
 
     private val permissionWatcher = object : Runnable {
         override fun run() {
             if (!isWatchingPermission) return
             if (hasOverlayPermission()) {
                 isWatchingPermission = false
-                Toast.makeText(this@MainActivity, "✅ تم إطلاق كبسولة الرادار العائمة بنجاح!", Toast.LENGTH_LONG).show()
-                startBubbleAndFinish()
+                Toast.makeText(this@MainActivity, "✅ تم تفعيل فقاعة الرادار بنجاح!", Toast.LENGTH_LONG).show()
+                startBubbleService()
+                finish()
             } else {
                 handler.postDelayed(this, 600)
             }
         }
     }
 
-    private val liveStateUpdater = object : Runnable {
+    private val pipPollRunnable = object : Runnable {
         override fun run() {
-            val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
-            val mode = prefs.getString("radar_mode", "customer") ?: "customer"
-            val mSlug = prefs.getString("merchant_slug", "latest") ?: "latest"
-            val token = getSavedToken()
-
+            if (!isInPipMode) return
             Thread {
-                val state = if (mode == "merchant") {
-                    RadarApiClient.fetchMerchantState(mSlug)
-                } else {
-                    RadarApiClient.fetchOrder(token) ?: RadarApiClient.fetchOrder("latest")
-                }
-                if (state != null) {
+                val tok = getSavedToken()
+                val data = RadarApiClient.fetchOrder(if (tok == "SENTINEL-IDLE") "latest" else tok)
+                if (data != null) {
                     handler.post {
-                        embeddedRadarView?.updateData(state)
-                        if (::pipStoreBadge.isInitialized) {
-                            pipStoreBadge.text = state.storeName
-                            pipStatusTitle.text = state.statusTitle
-                            pipStatusSubtitle.text = state.statusSubtitle
+                        if (::pipLiveStatusText.isInitialized) {
+                            pipLiveStatusText.text = "💠 ${data.storeName}\n${data.statusTitle}\n${data.statusSubtitle}"
                         }
                     }
                 }
             }.start()
-
-            handler.postDelayed(this, 4000)
+            handler.postDelayed(this, 3500)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         captureDeepLinkParams(intent)
-        requestNotificationPermissionIfNeeded()
 
-        startBubbleServiceOnly(expand = true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 102)
+            } catch (_: Exception) {}
+        }
+
+        // نشغّل خدمة التتبع والرادار المحلي (127.0.0.1:49210) فوراً!
+        startBubbleService()
 
         if (hasOverlayPermission()) {
-            finishAndRemoveTask()
+            finish()
             return
         }
 
-        buildOfficialZeroRestrictionUI()
-        handler.post(liveStateUpdater)
+        buildInstantOfficialOnboardingUI()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -110,9 +101,9 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         captureDeepLinkParams(intent)
-        startBubbleServiceOnly(expand = true)
+        startBubbleService()
         if (hasOverlayPermission()) {
-            finishAndRemoveTask()
+            finish()
         }
     }
 
@@ -120,25 +111,8 @@ class MainActivity : Activity() {
         super.onResume()
         if (hasOverlayPermission()) {
             isWatchingPermission = false
-            startBubbleAndFinish()
-        }
-    }
-
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        if (!hasOverlayPermission() && !isWatchingPermission) {
-            enterFloatingPipCapsule()
-        }
-    }
-
-    override fun onPictureInPictureModeChanged(
-        isInPictureInPictureMode: Boolean,
-        newConfig: Configuration
-    ) {
-        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        if (::fullRootScroll.isInitialized && ::pipRootContainer.isInitialized) {
-            fullRootScroll.visibility = if (isInPictureInPictureMode) View.GONE else View.VISIBLE
-            pipRootContainer.visibility = if (isInPictureInPictureMode) View.VISIBLE else View.GONE
+            startBubbleService()
+            finish()
         }
     }
 
@@ -146,110 +120,7 @@ class MainActivity : Activity() {
         super.onDestroy()
         isWatchingPermission = false
         handler.removeCallbacks(permissionWatcher)
-        handler.removeCallbacks(liveStateUpdater)
-    }
-
-    private fun isInstalledAsOfficialStoreSource(): Boolean {
-        if (Build.VERSION.SDK_INT < 33) return true
-        return try {
-            val info = packageManager.getInstallSourceInfo(packageName)
-            info.packageSource == PackageInstaller.PACKAGE_SOURCE_STORE
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun upgradeToOfficialStoreSource() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (!packageManager.canRequestPackageInstalls()) {
-                try {
-                    val allowIntent = Intent(
-                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                        Uri.parse("package:$packageName")
-                    )
-                    Toast.makeText(
-                        this,
-                        "اضغط «سماح» مرة واحدة لتوثيق التطبيق كمصدر متجر رسمي وفتح جميع الأذونات تلقائياً",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    startActivity(allowIntent)
-                    return
-                } catch (_: Exception) {}
-            }
-        }
-
-        Thread {
-            try {
-                val apkFile = File(applicationInfo.sourceDir)
-                val installer = packageManager.packageInstaller
-                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-                params.setAppPackageName(packageName)
-                if (Build.VERSION.SDK_INT >= 33) {
-                    params.setPackageSource(PackageInstaller.PACKAGE_SOURCE_STORE)
-                }
-                if (Build.VERSION.SDK_INT >= 31) {
-                    params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-                }
-
-                val sessionId = installer.createSession(params)
-                val session = installer.openSession(sessionId)
-                FileInputStream(apkFile).use { input ->
-                    session.openWrite("base.apk", 0, apkFile.length()).use { output ->
-                        input.copyTo(output)
-                        session.fsync(output)
-                    }
-                }
-
-                val callbackIntent = Intent(this, StoreSourceReceiver::class.java)
-                val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-                } else {
-                    PendingIntent.FLAG_UPDATE_CURRENT
-                }
-                val pendingIntent = PendingIntent.getBroadcast(this, sessionId, callbackIntent, flags)
-                session.commit(pendingIntent.intentSender)
-                session.close()
-            } catch (e: Exception) {
-                handler.post {
-                    openOverlaySettingsWithWatcher()
-                }
-            }
-        }.start()
-    }
-
-    private fun openOverlaySettingsWithWatcher() {
-        isWatchingPermission = true
-        handler.removeCallbacks(permissionWatcher)
-        handler.postDelayed(permissionWatcher, 600)
-        try {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            startActivity(intent)
-        } catch (_: Exception) {}
-    }
-
-    private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= 33) {
-            try {
-                if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
-                    requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 101)
-                }
-            } catch (_: Exception) {}
-        }
-    }
-
-    private fun enterFloatingPipCapsule(): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                val params = PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 10))
-                    .build()
-                return enterPictureInPictureMode(params)
-            } catch (_: Exception) {}
-        }
-        return false
+        handler.removeCallbacks(pipPollRunnable)
     }
 
     private fun captureClipboardHandshakeIfNeeded() {
@@ -318,7 +189,7 @@ class MainActivity : Activity() {
 
     private fun getSavedToken(): String {
         return getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
-            .getString("last_token", "latest") ?: "latest"
+            .getString("last_token", "SENTINEL-IDLE") ?: "SENTINEL-IDLE"
     }
 
     private fun getSavedStoreUrl(): String {
@@ -335,7 +206,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun startBubbleServiceOnly(expand: Boolean = true) {
+    private fun startBubbleService() {
         captureClipboardHandshakeIfNeeded()
         val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
         val mode = prefs.getString("radar_mode", "customer") ?: "customer"
@@ -345,7 +216,7 @@ class MainActivity : Activity() {
             putExtra("merchant_slug", mSlug)
             putExtra("token", getSavedToken())
             putExtra("store_url", getSavedStoreUrl())
-            putExtra("expand", expand)
+            putExtra("expand", true)
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -356,11 +227,6 @@ class MainActivity : Activity() {
         } catch (_: Exception) {
             try { startService(serviceIntent) } catch (_: Exception) {}
         }
-    }
-
-    private fun startBubbleAndFinish() {
-        startBubbleServiceOnly(expand = true)
-        finishAndRemoveTask()
     }
 
     private fun dp(value: Int): Int {
@@ -379,97 +245,148 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun buildOfficialZeroRestrictionUI() {
-        val masterFrame = FrameLayout(this).apply {
-            setBackgroundColor(Color.parseColor("#09090B"))
+    private fun enterOfficialPipCapsule() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .build()
+                enterPictureInPictureMode(params)
+                return
+            } catch (_: Exception) {}
         }
+        Toast.makeText(this, "✅ رادار الطرد يعمل الآن في الخلفية!", Toast.LENGTH_LONG).show()
+        moveTaskToBack(true)
+    }
 
-        pipRootContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            background = makeCardBg("#09090B", "#10B981", 16)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
-            visibility = View.GONE
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration?) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPipMode = isInPictureInPictureMode
+        if (isInPictureInPictureMode) {
+            val pipRoot = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setBackgroundColor(Color.parseColor("#09090B"))
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                setOnClickListener {
+                    val dest = getSavedStoreUrl().split("?")[0] + "?native_bubble=1"
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(dest)).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
+                }
+            }
+            pipLiveStatusText = TextView(this).apply {
+                text = "💠 رادار الطرد نشط 🟢\nجاري متابعة حالة طلبيتك لحظة بلحظة..."
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.parseColor("#38BDF8"))
+                gravity = Gravity.CENTER
+            }
+            pipRoot.addView(pipLiveStatusText)
+            setContentView(pipRoot)
+            handler.removeCallbacks(pipPollRunnable)
+            handler.post(pipPollRunnable)
+        } else {
+            handler.removeCallbacks(pipPollRunnable)
+            if (!hasOverlayPermission()) {
+                buildInstantOfficialOnboardingUI()
+            }
+        }
+    }
+
+    private fun installPartnerAsOfficialStore(apkUrl: String, targetPkg: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            Toast.makeText(this, "يرجى السماح بالتثبيت الرسمي أولاً ثم أعد الضغط", Toast.LENGTH_LONG).show()
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:$packageName")
+                )
             )
+            return
         }
 
-        pipStoreBadge = TextView(this).apply {
-            text = "💠 رادار المتجر المباشر"
-            setTextColor(Color.parseColor("#34D399"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-        }
+        Toast.makeText(this, "⏳ جاري تثبيت كبسولة التاجر بوسم المتجر الرسمي...", Toast.LENGTH_LONG).show()
+        Thread {
+            try {
+                val tmpFile = File(cacheDir, "official_merchant_target.apk")
+                val conn = (URL(apkUrl).openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = true
+                    connectTimeout = 15000
+                    readTimeout = 20000
+                }
+                conn.inputStream.use { input ->
+                    tmpFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
 
-        pipStatusTitle = TextView(this).apply {
-            text = "طردك: قيد المتابعة الحية ⚡"
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(4)
+                val installer = packageManager.packageInstaller
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+                params.setAppPackageName(targetPkg)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    params.setPackageSource(PackageInstaller.PACKAGE_SOURCE_STORE)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                }
+
+                val sessionId = installer.createSession(params)
+                val session = installer.openSession(sessionId)
+                FileInputStream(tmpFile).use { input ->
+                    session.openWrite("base.apk", 0, tmpFile.length()).use { output ->
+                        input.copyTo(output)
+                        session.fsync(output)
+                    }
+                }
+
+                val callbackIntent = Intent(this, StoreSourceReceiver::class.java)
+                val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                } else {
+                    PendingIntent.FLAG_UPDATE_CURRENT
+                }
+                val pending = PendingIntent.getBroadcast(this, sessionId, callbackIntent, pendingFlags)
+                session.commit(pending.intentSender)
+                session.close()
+            } catch (e: Exception) {
+                handler.post {
+                    Toast.makeText(this, "⚠️ تعذر التثبيت المباشر: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
-        }
+        }.start()
+    }
 
-        pipStatusSubtitle = TextView(this).apply {
-            text = "متصل بالمتجر لحظة بلحظة"
-            setTextColor(Color.parseColor("#A1A1AA"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(2)
-            }
-        }
-
-        pipRootContainer.addView(pipStoreBadge)
-        pipRootContainer.addView(pipStatusTitle)
-        pipRootContainer.addView(pipStatusSubtitle)
-
-        fullRootScroll = ScrollView(this).apply {
+    private fun buildInstantOfficialOnboardingUI() {
+        val scrollView = ScrollView(this).apply {
             setBackgroundColor(Color.parseColor("#09090B"))
             isFillViewport = true
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
         }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(20), dp(28), dp(20), dp(24))
+            setPadding(dp(22), dp(32), dp(22), dp(24))
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
 
-        val activeBadge = TextView(this).apply {
-            text = "✅ الإصدار الرسمي v1.3.0 نشط ومتصل"
-            setTextColor(Color.parseColor("#34D399"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(14), dp(6), dp(14), dp(6))
-            background = makeCardBg("#052E16", "#10B981", 20)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
+        val logoBadge = TextView(this).apply {
+            text = "💠"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 34f)
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#0C4A6E"))
+                setStroke(dp(3), Color.parseColor("#38BDF8"))
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(78), dp(78)).apply {
                 bottomMargin = dp(12)
             }
         }
-        root.addView(activeBadge)
+        root.addView(logoBadge)
 
         val title = TextView(this).apply {
-            text = "كبسولة رادار الطرد والتاجر"
+            text = "رادار السكينة وتتبع الطرد"
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
             typeface = Typeface.DEFAULT_BOLD
@@ -478,105 +395,157 @@ class MainActivity : Activity() {
         root.addView(title)
 
         val subtitle = TextView(this).apply {
-            text = "متابعة حية فورية فوق شاشتك بدون قيود"
-            setTextColor(Color.parseColor("#A1A1AA"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            text = "🟢 الرادار يعمل الآن في الخلفية ويتابع طلبيتك لحظة بلحظة"
+            setTextColor(Color.parseColor("#34D399"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(4)
-                bottomMargin = dp(14)
+                topMargin = dp(6)
+                bottomMargin = dp(16)
             }
         }
         root.addView(subtitle)
 
-        val radarHolder = FrameLayout(this).apply {
+        // بطاقة الإطلاق المباشر بنقرة واحدة (PiP Official Capsule - Allowed by Default)
+        val instantCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = makeCardBg("#18181B", "#38BDF8", 16)
+            setPadding(dp(16), dp(16), dp(16), dp(16))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(16)
+                bottomMargin = dp(14)
             }
         }
 
-        embeddedRadarView = RadarOverlayView(
-            this,
-            onOpenStore = {
-                val dest = getSavedStoreUrl()
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(dest)))
-                } catch (_: Exception) {}
-            },
-            onKillCompanion = {
-                finish()
-            },
-            onHideOverlay = {
-                enterFloatingPipCapsule()
-            }
-        ).apply {
-            bubbleContainer.visibility = View.GONE
-            toggleCard(true)
+        val instantTitle = TextView(this).apply {
+            text = "⚡ إطلاق كبسولة الرادار العائمة بنقرة واحدة"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            typeface = Typeface.DEFAULT_BOLD
         }
-        radarHolder.addView(embeddedRadarView)
-        root.addView(radarHolder)
 
-        // الزر الأول: التوثيق كمصدر متجر رسمي (PACKAGE_SOURCE_STORE) لفتح قفل Display over other apps مباشرة
-        val storeUnlockBtn = Button(this).apply {
-            text = "🛡️ تفعيل الكبسولة الدائرية بصلاحية المتجر الرسمي 💠"
-            setTextColor(Color.parseColor("#052E16"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
+        val instantDesc = TextView(this).apply {
+            text = "اضغط الزر بالأسفل لإطلاق النافذة العائمة الرسمية فوراً دون الحاجة لأي إعدادات إضافية."
+            setTextColor(Color.parseColor("#A1A1AA"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(6)
+                bottomMargin = dp(14)
+            }
+        }
+
+        val instantBtn = Button(this).apply {
+            text = "🚀 تشغيل الكبسولة العائمة فوراً 💠"
+            setTextColor(Color.parseColor("#082F49"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             typeface = Typeface.DEFAULT_BOLD
             isAllCaps = false
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#10B981"))
-                cornerRadius = dp(14).toFloat()
+                setColor(Color.parseColor("#38BDF8"))
+                cornerRadius = dp(12).toFloat()
             }
-            setPadding(dp(14), dp(14), dp(14), dp(14))
+            setPadding(dp(12), dp(14), dp(12), dp(14))
+            setOnClickListener {
+                startBubbleService()
+                if (hasOverlayPermission()) {
+                    finish()
+                } else {
+                    enterOfficialPipCapsule()
+                }
+            }
+        }
+
+        instantCard.addView(instantTitle)
+        instantCard.addView(instantDesc)
+        instantCard.addView(instantBtn)
+        root.addView(instantCard)
+
+        // بطاقة الجسر المتبادل لتثبيت كبسولة التاجر بصفة متجر رسمي (PACKAGE_SOURCE_STORE)
+        val merchantBridgeCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = makeCardBg("#18181B", "#F59E0B", 16)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(10)
-            }
-            setOnClickListener {
-                if (hasOverlayPermission()) {
-                    startBubbleAndFinish()
-                } else if (!isInstalledAsOfficialStoreSource()) {
-                    upgradeToOfficialStoreSource()
-                } else {
-                    openOverlaySettingsWithWatcher()
-                }
+                bottomMargin = dp(14)
             }
         }
-        root.addView(storeUnlockBtn)
 
-        // الزر الثاني: التعويم الفوري بدون إعدادات عبر Picture-in-Picture
-        val instantPipBtn = Button(this).apply {
-            text = "🚀 أو تعويم النافذة المصغرة فوراً بدون إعدادات"
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        val bridgeTitle = TextView(this).apply {
+            text = "👑 جسر المتجر الرسمي لتثبيت «كبسولة التاجر»"
+            setTextColor(Color.parseColor("#FBBF24"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
             typeface = Typeface.DEFAULT_BOLD
-            isAllCaps = false
-            background = makeCardBg("#18181B", "#38BDF8", 12)
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }
+
+        val bridgeDesc = TextView(this).apply {
+            text = "يثبّت تطبيق كبسولة التاجر (v3.3.0 الموقّع رسمياً) بصفة متجر رسمي (PACKAGE_SOURCE_STORE) لفتح كافة الصلاحيات مباشرة دون قيود."
+            setTextColor(Color.parseColor("#D4D4D8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            setOnClickListener {
-                startBubbleServiceOnly(expand = true)
-                if (!enterFloatingPipCapsule()) {
-                    moveTaskToBack(true)
-                }
+            ).apply {
+                topMargin = dp(6)
+                bottomMargin = dp(10)
             }
         }
-        root.addView(instantPipBtn)
 
-        fullRootScroll.addView(root)
-        masterFrame.addView(fullRootScroll)
-        masterFrame.addView(pipRootContainer)
-        setContentView(masterFrame)
+        val bridgeBtn = Button(this).apply {
+            text = "👑 تثبيت كبسولة التاجر بصفة متجر رسمي معتمد"
+            setTextColor(Color.parseColor("#09090B"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = false
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F59E0B"))
+                cornerRadius = dp(10).toFloat()
+            }
+            setOnClickListener {
+                installPartnerAsOfficialStore(
+                    apkUrl = "https://github.com/anouarkhellaf90210-del/dz-merchant-cockpit/releases/latest/download/DZ-Merchant-Cockpit.apk",
+                    targetPkg = "com.dzmerchant.cockpit"
+                )
+            }
+        }
+
+        merchantBridgeCard.addView(bridgeTitle)
+        merchantBridgeCard.addView(bridgeDesc)
+        merchantBridgeCard.addView(bridgeBtn)
+        root.addView(merchantBridgeCard)
+
+        val optionalOverlayBtn = Button(this).apply {
+            text = "⚙️ تفعيل الفقاعة الحرة (Display over other apps)"
+            setTextColor(Color.parseColor("#A1A1AA"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            isAllCaps = false
+            background = makeCardBg("#18181B", "#27272A", 12)
+            setOnClickListener {
+                isWatchingPermission = true
+                handler.removeCallbacks(permissionWatcher)
+                handler.postDelayed(permissionWatcher, 600)
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+        }
+        root.addView(optionalOverlayBtn)
+
+        scrollView.addView(root)
+        setContentView(scrollView)
     }
 }
