@@ -1,13 +1,9 @@
 package com.dzradar.companion
 
 import android.app.Activity
-import android.app.PendingIntent
-import android.app.PictureInPictureParams
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInstaller
-import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -17,7 +13,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.util.Rational
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -26,47 +21,22 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import java.io.File
-import java.io.FileInputStream
-import java.net.HttpURLConnection
-import java.net.URL
 
 class MainActivity : Activity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var isWatchingPermission = false
-    private var isInPipMode = false
-    private lateinit var pipLiveStatusText: TextView
 
     private val permissionWatcher = object : Runnable {
         override fun run() {
             if (!isWatchingPermission) return
             if (hasOverlayPermission()) {
                 isWatchingPermission = false
-                Toast.makeText(this@MainActivity, "✅ تم تفعيل فقاعة الرادار بنجاح!", Toast.LENGTH_LONG).show()
-                startBubbleService()
-                finish()
+                Toast.makeText(this@MainActivity, "✅ تم تفعيل رادار السكينة بنجاح!", Toast.LENGTH_LONG).show()
+                startBubbleAndFinish()
             } else {
-                handler.postDelayed(this, 600)
+                handler.postDelayed(this, 500)
             }
-        }
-    }
-
-    private val pipPollRunnable = object : Runnable {
-        override fun run() {
-            if (!isInPipMode) return
-            Thread {
-                val tok = getSavedToken()
-                val data = RadarApiClient.fetchOrder(if (tok == "SENTINEL-IDLE") "latest" else tok)
-                if (data != null) {
-                    handler.post {
-                        if (::pipLiveStatusText.isInitialized) {
-                            pipLiveStatusText.text = "💠 ${data.storeName}\n${data.statusTitle}\n${data.statusSubtitle}"
-                        }
-                    }
-                }
-            }.start()
-            handler.postDelayed(this, 3500)
         }
     }
 
@@ -74,21 +44,12 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         captureDeepLinkParams(intent)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            try {
-                requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 102)
-            } catch (_: Exception) {}
-        }
-
-        // نشغّل خدمة التتبع والرادار المحلي (127.0.0.1:49210) فوراً!
-        startBubbleService()
-
         if (hasOverlayPermission()) {
-            finish()
+            startBubbleAndFinish()
             return
         }
 
-        buildInstantOfficialOnboardingUI()
+        buildOfficialStoreOnboardingUI()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -101,9 +62,8 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         captureDeepLinkParams(intent)
-        startBubbleService()
         if (hasOverlayPermission()) {
-            finish()
+            startBubbleAndFinish()
         }
     }
 
@@ -111,8 +71,7 @@ class MainActivity : Activity() {
         super.onResume()
         if (hasOverlayPermission()) {
             isWatchingPermission = false
-            startBubbleService()
-            finish()
+            startBubbleAndFinish()
         }
     }
 
@@ -120,7 +79,6 @@ class MainActivity : Activity() {
         super.onDestroy()
         isWatchingPermission = false
         handler.removeCallbacks(permissionWatcher)
-        handler.removeCallbacks(pipPollRunnable)
     }
 
     private fun captureClipboardHandshakeIfNeeded() {
@@ -206,7 +164,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun startBubbleService() {
+    private fun startBubbleAndFinish() {
         captureClipboardHandshakeIfNeeded()
         val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
         val mode = prefs.getString("radar_mode", "customer") ?: "customer"
@@ -218,15 +176,8 @@ class MainActivity : Activity() {
             putExtra("store_url", getSavedStoreUrl())
             putExtra("expand", true)
         }
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent)
-            } else {
-                startService(serviceIntent)
-            }
-        } catch (_: Exception) {
-            try { startService(serviceIntent) } catch (_: Exception) {}
-        }
+        startService(serviceIntent)
+        finishAndRemoveTask()
     }
 
     private fun dp(value: Int): Int {
@@ -245,119 +196,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun enterOfficialPipCapsule() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                val params = PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 9))
-                    .build()
-                enterPictureInPictureMode(params)
-                return
-            } catch (_: Exception) {}
-        }
-        Toast.makeText(this, "✅ رادار الطرد يعمل الآن في الخلفية!", Toast.LENGTH_LONG).show()
-        moveTaskToBack(true)
-    }
-
-    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration?) {
-        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        isInPipMode = isInPictureInPictureMode
-        if (isInPictureInPictureMode) {
-            val pipRoot = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                setBackgroundColor(Color.parseColor("#09090B"))
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                setOnClickListener {
-                    val dest = getSavedStoreUrl().split("?")[0] + "?native_bubble=1"
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(dest)).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
-                }
-            }
-            pipLiveStatusText = TextView(this).apply {
-                text = "💠 رادار الطرد نشط 🟢\nجاري متابعة حالة طلبيتك لحظة بلحظة..."
-                textSize = 12f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(Color.parseColor("#38BDF8"))
-                gravity = Gravity.CENTER
-            }
-            pipRoot.addView(pipLiveStatusText)
-            setContentView(pipRoot)
-            handler.removeCallbacks(pipPollRunnable)
-            handler.post(pipPollRunnable)
-        } else {
-            handler.removeCallbacks(pipPollRunnable)
-            if (!hasOverlayPermission()) {
-                buildInstantOfficialOnboardingUI()
-            }
-        }
-    }
-
-    private fun installPartnerAsOfficialStore(apkUrl: String, targetPkg: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
-            Toast.makeText(this, "يرجى السماح بالتثبيت الرسمي أولاً ثم أعد الضغط", Toast.LENGTH_LONG).show()
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                    Uri.parse("package:$packageName")
-                )
-            )
-            return
-        }
-
-        Toast.makeText(this, "⏳ جاري تثبيت كبسولة التاجر بوسم المتجر الرسمي...", Toast.LENGTH_LONG).show()
-        Thread {
-            try {
-                val tmpFile = File(cacheDir, "official_merchant_target.apk")
-                val conn = (URL(apkUrl).openConnection() as HttpURLConnection).apply {
-                    instanceFollowRedirects = true
-                    connectTimeout = 15000
-                    readTimeout = 20000
-                }
-                conn.inputStream.use { input ->
-                    tmpFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-
-                val installer = packageManager.packageInstaller
-                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-                params.setAppPackageName(targetPkg)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    params.setPackageSource(PackageInstaller.PACKAGE_SOURCE_STORE)
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-                }
-
-                val sessionId = installer.createSession(params)
-                val session = installer.openSession(sessionId)
-                FileInputStream(tmpFile).use { input ->
-                    session.openWrite("base.apk", 0, tmpFile.length()).use { output ->
-                        input.copyTo(output)
-                        session.fsync(output)
-                    }
-                }
-
-                val callbackIntent = Intent(this, StoreSourceReceiver::class.java)
-                val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-                } else {
-                    PendingIntent.FLAG_UPDATE_CURRENT
-                }
-                val pending = PendingIntent.getBroadcast(this, sessionId, callbackIntent, pendingFlags)
-                session.commit(pending.intentSender)
-                session.close()
-            } catch (e: Exception) {
-                handler.post {
-                    Toast.makeText(this, "⚠️ تعذر التثبيت المباشر: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-        }.start()
-    }
-
-    private fun buildInstantOfficialOnboardingUI() {
+    private fun buildOfficialStoreOnboardingUI() {
         val scrollView = ScrollView(this).apply {
             setBackgroundColor(Color.parseColor("#09090B"))
             isFillViewport = true
@@ -365,22 +204,22 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(22), dp(32), dp(22), dp(24))
+            gravity = Gravity.CENTER
+            setPadding(dp(22), dp(36), dp(22), dp(28))
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
 
         val logoBadge = TextView(this).apply {
             text = "💠"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 34f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 36f)
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor("#0C4A6E"))
                 setStroke(dp(3), Color.parseColor("#38BDF8"))
             }
-            layoutParams = LinearLayout.LayoutParams(dp(78), dp(78)).apply {
-                bottomMargin = dp(12)
+            layoutParams = LinearLayout.LayoutParams(dp(84), dp(84)).apply {
+                bottomMargin = dp(14)
             }
         }
         root.addView(logoBadge)
@@ -388,52 +227,83 @@ class MainActivity : Activity() {
         val title = TextView(this).apply {
             text = "رادار السكينة وتتبع الطرد"
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 21f)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
         }
         root.addView(title)
 
         val subtitle = TextView(this).apply {
-            text = "🟢 الرادار يعمل الآن في الخلفية ويتابع طلبيتك لحظة بلحظة"
-            setTextColor(Color.parseColor("#34D399"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-            typeface = Typeface.DEFAULT_BOLD
+            text = "طلبك في أيدٍ أمينة ونحن نراقبه لأجلك لحظة بلحظة"
+            setTextColor(Color.parseColor("#A1A1AA"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 topMargin = dp(6)
-                bottomMargin = dp(16)
+                bottomMargin = dp(18)
             }
         }
         root.addView(subtitle)
 
-        // بطاقة الإطلاق المباشر بنقرة واحدة (PiP Official Capsule - Allowed by Default)
-        val instantCard = LinearLayout(this).apply {
+        val trustShield = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = makeCardBg("#052E16", "#10B981", 16)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(20)
+            }
+        }
+
+        val shieldHeader = TextView(this).apply {
+            text = "🛡️ ضمان الأمان والخصوصية 100%"
+            setTextColor(Color.parseColor("#34D399"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val shieldBody = TextView(this).apply {
+            text = "تطبيق رسمي خفيف وآمن تماماً؛ وظيفته الوحيدة هي إظهار كبسولة التتبع المصغرة على شاشتك، ولا يملك أي صلاحية للوصول إلى صورك أو ملفاتك أو أرقام هاتفك."
+            setTextColor(Color.parseColor("#D1FAE5"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setLineSpacing(0f, 1.25f)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(6)
+            }
+        }
+        trustShield.addView(shieldHeader)
+        trustShield.addView(shieldBody)
+        root.addView(trustShield)
+
+        val launchCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = makeCardBg("#18181B", "#38BDF8", 16)
             setPadding(dp(16), dp(16), dp(16), dp(16))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dp(14)
-            }
+            )
         }
 
-        val instantTitle = TextView(this).apply {
-            text = "⚡ إطلاق كبسولة الرادار العائمة بنقرة واحدة"
+        val launchTitle = TextView(this).apply {
+            text = "إطلاق كبسولة الرادار العائمة 💠"
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             typeface = Typeface.DEFAULT_BOLD
         }
 
-        val instantDesc = TextView(this).apply {
-            text = "اضغط الزر بالأسفل لإطلاق النافذة العائمة الرسمية فوراً دون الحاجة لأي إعدادات إضافية."
+        val launchDesc = TextView(this).apply {
+            text = "اضغط الزر بالأسفل وفعّل مفتاح «الظهور فوق التطبيقات»؛ ستنطلق كبسولة التتبع العائمة على شاشتك فوراً!"
             setTextColor(Color.parseColor("#A1A1AA"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            setLineSpacing(0f, 1.25f)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -443,8 +313,8 @@ class MainActivity : Activity() {
             }
         }
 
-        val instantBtn = Button(this).apply {
-            text = "🚀 تشغيل الكبسولة العائمة فوراً 💠"
+        val primaryActionBtn = Button(this).apply {
+            text = "تفعيل الرادار بنقرة واحدة 💠"
             setTextColor(Color.parseColor("#082F49"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             typeface = Typeface.DEFAULT_BOLD
@@ -455,95 +325,26 @@ class MainActivity : Activity() {
             }
             setPadding(dp(12), dp(14), dp(12), dp(14))
             setOnClickListener {
-                startBubbleService()
                 if (hasOverlayPermission()) {
-                    finish()
+                    startBubbleAndFinish()
                 } else {
-                    enterOfficialPipCapsule()
+                    isWatchingPermission = true
+                    handler.removeCallbacks(permissionWatcher)
+                    handler.postDelayed(permissionWatcher, 500)
+
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                    startActivity(intent)
                 }
             }
         }
 
-        instantCard.addView(instantTitle)
-        instantCard.addView(instantDesc)
-        instantCard.addView(instantBtn)
-        root.addView(instantCard)
-
-        // بطاقة الجسر المتبادل لتثبيت كبسولة التاجر بصفة متجر رسمي (PACKAGE_SOURCE_STORE)
-        val merchantBridgeCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = makeCardBg("#18181B", "#F59E0B", 16)
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dp(14)
-            }
-        }
-
-        val bridgeTitle = TextView(this).apply {
-            text = "👑 جسر المتجر الرسمي لتثبيت «كبسولة التاجر»"
-            setTextColor(Color.parseColor("#FBBF24"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
-            typeface = Typeface.DEFAULT_BOLD
-        }
-
-        val bridgeDesc = TextView(this).apply {
-            text = "يثبّت تطبيق كبسولة التاجر (v3.3.0 الموقّع رسمياً) بصفة متجر رسمي (PACKAGE_SOURCE_STORE) لفتح كافة الصلاحيات مباشرة دون قيود."
-            setTextColor(Color.parseColor("#D4D4D8"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(6)
-                bottomMargin = dp(10)
-            }
-        }
-
-        val bridgeBtn = Button(this).apply {
-            text = "👑 تثبيت كبسولة التاجر بصفة متجر رسمي معتمد"
-            setTextColor(Color.parseColor("#09090B"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-            typeface = Typeface.DEFAULT_BOLD
-            isAllCaps = false
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#F59E0B"))
-                cornerRadius = dp(10).toFloat()
-            }
-            setOnClickListener {
-                installPartnerAsOfficialStore(
-                    apkUrl = "https://github.com/anouarkhellaf90210-del/dz-merchant-cockpit/releases/latest/download/DZ-Merchant-Cockpit.apk",
-                    targetPkg = "com.dzmerchant.cockpit"
-                )
-            }
-        }
-
-        merchantBridgeCard.addView(bridgeTitle)
-        merchantBridgeCard.addView(bridgeDesc)
-        merchantBridgeCard.addView(bridgeBtn)
-        root.addView(merchantBridgeCard)
-
-        val optionalOverlayBtn = Button(this).apply {
-            text = "⚙️ تفعيل الفقاعة الحرة (Display over other apps)"
-            setTextColor(Color.parseColor("#A1A1AA"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            isAllCaps = false
-            background = makeCardBg("#18181B", "#27272A", 12)
-            setOnClickListener {
-                isWatchingPermission = true
-                handler.removeCallbacks(permissionWatcher)
-                handler.postDelayed(permissionWatcher, 600)
-                startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
-                )
-            }
-        }
-        root.addView(optionalOverlayBtn)
+        launchCard.addView(launchTitle)
+        launchCard.addView(launchDesc)
+        launchCard.addView(primaryActionBtn)
+        root.addView(launchCard)
 
         scrollView.addView(root)
         setContentView(scrollView)
