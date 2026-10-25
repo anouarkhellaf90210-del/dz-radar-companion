@@ -26,6 +26,8 @@ class MainActivity : Activity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var isWatchingPermission = false
+    private lateinit var step1Card: LinearLayout
+    private lateinit var primaryActionBtn: Button
 
     private val permissionWatcher = object : Runnable {
         override fun run() {
@@ -35,7 +37,7 @@ class MainActivity : Activity() {
                 Toast.makeText(this@MainActivity, "✅ تم تفعيل رادار السكينة بنجاح!", Toast.LENGTH_LONG).show()
                 startBubbleAndFinish()
             } else {
-                handler.postDelayed(this, 500)
+                handler.postDelayed(this, 600)
             }
         }
     }
@@ -49,7 +51,7 @@ class MainActivity : Activity() {
             return
         }
 
-        buildOfficialStoreOnboardingUI()
+        buildReassuringOnboardingUI()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -196,7 +198,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun buildOfficialStoreOnboardingUI() {
+    private fun buildReassuringOnboardingUI() {
         val scrollView = ScrollView(this).apply {
             setBackgroundColor(Color.parseColor("#09090B"))
             isFillViewport = true
@@ -204,7 +206,7 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(22), dp(36), dp(22), dp(28))
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
@@ -267,7 +269,7 @@ class MainActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
         }
         val shieldBody = TextView(this).apply {
-            text = "تطبيق رسمي خفيف وآمن تماماً؛ وظيفته الوحيدة هي إظهار كبسولة التتبع المصغرة على شاشتك، ولا يملك أي صلاحية للوصول إلى صورك أو ملفاتك أو أرقام هاتفك."
+            text = "تطبيق خفيف وآمن تماماً؛ وظيفته الوحيدة هي إظهار كبسولة التتبع المصغرة على شاشتك، ولا يملك أي صلاحية للوصول إلى صورك أو ملفاتك أو أرقام هاتفك."
             setTextColor(Color.parseColor("#D1FAE5"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setLineSpacing(0f, 1.25f)
@@ -282,7 +284,64 @@ class MainActivity : Activity() {
         trustShield.addView(shieldBody)
         root.addView(trustShield)
 
-        val launchCard = LinearLayout(this).apply {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            step1Card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = makeCardBg("#18181B", "#27272A", 16)
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = dp(14)
+                }
+            }
+
+            val step1Title = TextView(this).apply {
+                text = "الخطوة 1: فك القيد الاحترازي (تُفعل مرة واحدة)"
+                setTextColor(Color.parseColor("#FBBF24"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                typeface = Typeface.DEFAULT_BOLD
+            }
+
+            val step1Desc = TextView(this).apply {
+                text = "إذا كان مفتاح التفعيل رمادياً، اضغط الزر بالأسفل ثم اضغط النقاط الثلاث (⋮) في أعلى الزاوية واختر «السماح بالإعدادات المقيّدة / Remove permission restrictions»."
+                setTextColor(Color.parseColor("#D4D4D8"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setLineSpacing(0f, 1.25f)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dp(6)
+                    bottomMargin = dp(12)
+                }
+            }
+
+            val step1Btn = Button(this).apply {
+                text = "1. فتح صفحة السماح السريع (⋮) 🔓"
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                typeface = Typeface.DEFAULT_BOLD
+                isAllCaps = false
+                background = makeCardBg("#27272A", "#3F3F46", 12)
+                setOnClickListener {
+                    try {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", packageName, null)
+                        }
+                        startActivity(intent)
+                    } catch (_: Exception) {}
+                }
+            }
+
+            step1Card.addView(step1Title)
+            step1Card.addView(step1Desc)
+            step1Card.addView(step1Btn)
+            root.addView(step1Card)
+        }
+
+        val step2Card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = makeCardBg("#18181B", "#38BDF8", 16)
             setPadding(dp(16), dp(16), dp(16), dp(16))
@@ -292,17 +351,17 @@ class MainActivity : Activity() {
             )
         }
 
-        val launchTitle = TextView(this).apply {
-            text = "إطلاق كبسولة الرادار العائمة 💠"
+        val step2Title = TextView(this).apply {
+            text = "الخطوة النهائية: إطلاق كبسولة الرادار 💠"
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             typeface = Typeface.DEFAULT_BOLD
         }
 
-        val launchDesc = TextView(this).apply {
-            text = "اضغط الزر بالأسفل وفعّل مفتاح «الظهور فوق التطبيقات»؛ ستنطلق كبسولة التتبع العائمة على شاشتك فوراً!"
+        val step2Desc = TextView(this).apply {
+            text = "اضغط الزر بالأسفل وفعّل مفتاح «الظهور فوق التطبيقات»؛ ستنطلق كبسولة التتبع على شاشتك فوراً!"
             setTextColor(Color.parseColor("#A1A1AA"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setLineSpacing(0f, 1.25f)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -313,7 +372,7 @@ class MainActivity : Activity() {
             }
         }
 
-        val primaryActionBtn = Button(this).apply {
+        primaryActionBtn = Button(this).apply {
             text = "تفعيل الرادار بنقرة واحدة 💠"
             setTextColor(Color.parseColor("#082F49"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
@@ -330,7 +389,7 @@ class MainActivity : Activity() {
                 } else {
                     isWatchingPermission = true
                     handler.removeCallbacks(permissionWatcher)
-                    handler.postDelayed(permissionWatcher, 500)
+                    handler.postDelayed(permissionWatcher, 600)
 
                     val intent = Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -341,10 +400,10 @@ class MainActivity : Activity() {
             }
         }
 
-        launchCard.addView(launchTitle)
-        launchCard.addView(launchDesc)
-        launchCard.addView(primaryActionBtn)
-        root.addView(launchCard)
+        step2Card.addView(step2Title)
+        step2Card.addView(step2Desc)
+        step2Card.addView(primaryActionBtn)
+        root.addView(step2Card)
 
         scrollView.addView(root)
         setContentView(scrollView)
