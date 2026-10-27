@@ -169,6 +169,7 @@ class MainActivity : Activity() {
     private fun startBubbleAndFinish() {
         captureClipboardHandshakeIfNeeded()
         val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("is_overlay_in_standby", false).apply()
         val mode = prefs.getString("radar_mode", "customer") ?: "customer"
         val mSlug = prefs.getString("merchant_slug", "latest") ?: "latest"
         val serviceIntent = Intent(this, FloatingBubbleService::class.java).apply {
@@ -178,7 +179,11 @@ class MainActivity : Activity() {
             putExtra("store_url", getSavedStoreUrl())
             putExtra("expand", true)
         }
-        startService(serviceIntent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
         finishAndRemoveTask()
     }
 

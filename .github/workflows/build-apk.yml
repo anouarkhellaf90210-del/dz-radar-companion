@@ -55,8 +55,8 @@ jobs:
     - name: Publish Signed Release APK
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v1.5.1
-        name: "DZ Radar Companion v1.5.1 (Golden Harmonious Release)"
+        tag_name: v1.6.0
+        name: "DZ Radar Companion v1.6.0 (Immortal Standby & Instant Wakeup Release)"
         draft: false
         prerelease: false
         files: release-artifacts/*.apk

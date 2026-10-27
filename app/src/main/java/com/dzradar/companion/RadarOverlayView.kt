@@ -37,6 +37,7 @@ class RadarOverlayView(
 ) : FrameLayout(context) {
 
     private val uiHandler = Handler(Looper.getMainLooper())
+    private val sentinelPixelView: View
     val bubbleContainer: FrameLayout
     private val bubbleOuterHalo: GradientDrawable
     private val bubbleRing: GradientDrawable
@@ -506,6 +507,11 @@ class RadarOverlayView(
         actionsRow.addView(hideStandbyBtn)
         cardContainer.addView(actionsRow)
 
+        sentinelPixelView = View(context).apply {
+            layoutParams = LinearLayout.LayoutParams(1, 1)
+            setBackgroundColor(Color.argb(2, 212, 175, 55))
+        }
+        rootLayout.addView(sentinelPixelView)
         rootLayout.addView(bubbleContainer)
         rootLayout.addView(cardContainer)
         addView(rootLayout)
@@ -596,6 +602,20 @@ class RadarOverlayView(
             connectorLines[i].setBackgroundColor(
                 if (reached) Color.parseColor("#10B981") else Color.parseColor("#27272A")
             )
+        }
+    }
+
+    fun setStandbyMode(standby: Boolean) {
+        uiHandler.post {
+            if (standby) {
+                cardOpen = false
+                cardContainer.visibility = View.GONE
+                bubbleContainer.visibility = View.GONE
+                sentinelPixelView.visibility = View.VISIBLE
+            } else {
+                bubbleContainer.visibility = View.VISIBLE
+                sentinelPixelView.visibility = View.VISIBLE
+            }
         }
     }
 
