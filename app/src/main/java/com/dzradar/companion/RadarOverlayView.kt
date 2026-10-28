@@ -514,7 +514,8 @@ class RadarOverlayView(
             "🎵 كريستال ✨ ▼",
             "🎵 نبض الرادار 📡 ▼",
             "🎵 الجرس الملكي 👑 ▼",
-            "🎵 اهتزاز فقط 📳 ▼"
+            "🎵 اهتزاز فقط 📳 ▼",
+            "📱 نغمة من الهاتف... 🎶"
         )
         val radarPrefs = context.getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
 
@@ -529,6 +530,23 @@ class RadarOverlayView(
                 }
             } catch (_: Exception) {}
             if (idx == 4) return
+            if (idx == 5) {
+                val uriStr = radarPrefs.getString("customer_custom_tone_uri", null)
+                if (uriStr != null) {
+                    try {
+                        val rt = android.media.RingtoneManager.getRingtone(context, android.net.Uri.parse(uriStr))
+                        rt?.play()
+                        uiHandler.postDelayed({ try { rt?.stop() } catch (_: Exception) {} }, 1800)
+                    } catch (_: Exception) {}
+                } else {
+                    val pIntent = Intent(context, MainActivity::class.java).apply {
+                        putExtra("action", "pick_ringtone")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(pIntent)
+                }
+                return
+            }
             try {
                 val tg = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 100)
                 when (idx) {
@@ -564,9 +582,15 @@ class RadarOverlayView(
             }
         }
 
-        val savedToneIdx = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, toneNames.size - 1)
+        val savedToneIdx = radarPrefs.getInt("customer_tone_idx", 0)
+        val initialLabel = if (savedToneIdx == 5) {
+            "📱 " + radarPrefs.getString("customer_custom_tone_name", "نغمة الهاتف") + " ▼"
+        } else {
+            toneNames.getOrElse(savedToneIdx) { toneNames[0] }
+        }
+
         val toneSelectBtn = TextView(context).apply {
-            text = toneNames[savedToneIdx]
+            text = initialLabel
             setTextColor(Color.parseColor("#FBBF24"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
             typeface = Typeface.DEFAULT_BOLD
@@ -577,16 +601,32 @@ class RadarOverlayView(
                 setStroke(dp(1), Color.parseColor("#F59E0B"))
             }
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.25f).apply {
                 leftMargin = dp(6)
             }
             setOnClickListener {
                 val cur = radarPrefs.getInt("customer_tone_idx", 0)
                 val next = (cur + 1) % toneNames.size
-                radarPrefs.edit().putInt("customer_tone_idx", next).apply()
-                text = toneNames[next]
-                playCustomerTonePreview(next)
-                android.widget.Toast.makeText(context, "تم اختيار نغمة: " + toneNames[next].replace(" ▼", ""), android.widget.Toast.LENGTH_SHORT).show()
+                if (next == 5) {
+                    val pIntent = Intent(context, MainActivity::class.java).apply {
+                        putExtra("action", "pick_ringtone")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(pIntent)
+                } else {
+                    radarPrefs.edit().putInt("customer_tone_idx", next).apply()
+                    text = toneNames[next]
+                    playCustomerTonePreview(next)
+                    android.widget.Toast.makeText(context, "تم اختيار: " + toneNames[next].replace(" ▼", ""), android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+            setOnLongClickListener {
+                val pIntent = Intent(context, MainActivity::class.java).apply {
+                    putExtra("action", "pick_ringtone")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(pIntent)
+                true
             }
         }
 
@@ -602,9 +642,9 @@ class RadarOverlayView(
                 setStroke(dp(1), Color.parseColor("#3F3F46"))
             }
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.1f)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.95f)
             setOnClickListener {
-                val cur = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, toneNames.size - 1)
+                val cur = radarPrefs.getInt("customer_tone_idx", 0)
                 playCustomerTonePreview(cur)
             }
         }

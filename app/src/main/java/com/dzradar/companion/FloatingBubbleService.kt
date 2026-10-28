@@ -440,6 +440,17 @@ class FloatingBubbleService : Service() {
         } catch (_: Exception) {}
 
         if (toneIdx == 4) return
+        if (toneIdx == 5) {
+            val uriStr = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE).getString("customer_custom_tone_uri", null)
+            if (uriStr != null) {
+                try {
+                    val rt = android.media.RingtoneManager.getRingtone(this, android.net.Uri.parse(uriStr))
+                    rt?.play()
+                    handler.postDelayed({ try { rt?.stop() } catch (_: Exception) {} }, 2500)
+                } catch (_: Exception) {}
+            }
+            return
+        }
 
         try {
             val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)

@@ -24,6 +24,48 @@ import android.widget.Toast
 
 class MainActivity : Activity() {
 
+    private val RINGTONE_REQ_CODE = 7788
+
+    private fun launchSystemRingtonePicker() {
+        val currentUriStr = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
+            .getString("customer_custom_tone_uri", null)
+        val currentUri = if (currentUriStr != null) android.net.Uri.parse(currentUriStr) else android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
+
+        val intent = Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TYPE, android.media.RingtoneManager.TYPE_NOTIFICATION or android.media.RingtoneManager.TYPE_RINGTONE)
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TITLE, "اختر نغمة التنبيه للرادار من هاتفك 📱")
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, currentUri)
+        }
+        startActivityForResult(intent, RINGTONE_REQ_CODE)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == RINGTONE_REQ_CODE && resultCode == Activity.RESULT_OK) {
+            val uri = data?.getParcelableExtra<android.net.Uri>(android.media.RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            if (uri != null) {
+                val ringtone = android.media.RingtoneManager.getRingtone(this, uri)
+                val title = ringtone?.getTitle(this) ?: "نغمة مخصصة"
+                val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE).edit()
+                prefs.putString("customer_custom_tone_uri", uri.toString())
+                prefs.putString("customer_custom_tone_name", title)
+                prefs.putInt("customer_tone_idx", 5)
+                prefs.apply()
+                Toast.makeText(this, "تم اعتماد نغمة الهاتف: " + title + " 📱", Toast.LENGTH_SHORT).show()
+                try {
+                    ringtone?.play()
+                    handler.postDelayed({ try { ringtone?.stop() } catch (_: Exception) {} }, 1600)
+                } catch (_: Exception) {}
+            }
+            finish()
+            return
+        }
+    }
+
+
     private val handler = Handler(Looper.getMainLooper())
     private var isWatchingPermission = false
     private lateinit var step1Card: LinearLayout
@@ -43,6 +85,11 @@ class MainActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (intent?.getStringExtra("action") == "pick_ringtone") {
+            super.onCreate(savedInstanceState)
+            launchSystemRingtonePicker()
+            return
+        }
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 33) {
             try {
