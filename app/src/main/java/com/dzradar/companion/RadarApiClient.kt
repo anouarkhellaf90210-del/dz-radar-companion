@@ -23,7 +23,8 @@ data class RadarOrderState(
     val newCount: Int = 0,
     val preparingCount: Int = 0,
     val shippingCount: Int = 0,
-    val deliveredCount: Int = 0
+    val deliveredCount: Int = 0,
+    val isPickup: Boolean = false
 )
 
 object RadarApiClient {
@@ -88,11 +89,31 @@ object RadarApiClient {
                     }
                 }
 
-                val (title, subtitle) = when (station) {
-                    4 -> "طردك: تم التسليم 🤝" to "وصل طردك بأمان، تتهنى به!"
-                    3 -> "طردك: في الطريق إليك 🚚" to "طردك الآن مع الموزع متجه إليك"
-                    2 -> "طردك: قيد التجهيز 📦" to "يجري فرز وتغليف طردك بمستودعنا"
-                    else -> "طردك: مُستلم ⚡" to "تم تسجيل وتثبيت طلبيتك بنجاح"
+                val isPickup = orderObj.optBoolean("is_pickup", root.optBoolean("is_pickup", false)) ||
+                    orderObj.optString("delivery_type", "").lowercase() == "pickup" ||
+                    orderObj.optString("wilaya", "").contains("استلام") ||
+                    orderObj.optString("shipping_address", "").contains("استلام") ||
+                    orderObj.optString("notes", "").contains("PICKUP")
+
+                val serverTitle = orderObj.optString("status_title", root.optString("status_title", "")).trim()
+                val serverSubtitle = orderObj.optString("status_subtitle", root.optString("status_subtitle", "")).trim()
+
+                val (title, subtitle) = if (serverTitle.isNotEmpty()) {
+                    serverTitle to serverSubtitle
+                } else if (isPickup) {
+                    when (station) {
+                        4 -> "تم الاستلام من المحل 🤝" to "تشرفت بزيارتك للمحل، تتهنى بسلعتك!"
+                        3 -> "سلعتك: جاهزة بالمحل 🏪" to "سلعتك واجدة في المحل! تفضل بالحضور لاستلامها متى شئت"
+                        2 -> "سلعتك: قيد التجهيز بالمحل 📦" to "يقوم التاجر الآن بتحضير سلعتك لتكون جاهزة عند حضورك"
+                        else -> "طلبيتك: قيد التأكيد ⏳" to "سيتصل بك التاجر قريباً لتأكيد حضورك للمحل"
+                    }
+                } else {
+                    when (station) {
+                        4 -> "طردك: تم التسليم 🤝" to "وصل طردك بأمان، تتهنى به!"
+                        3 -> "طردك: في الطريق إليك 🚚" to "طردك الآن مع الموزع متجه إليك"
+                        2 -> "طردك: قيد التجهيز 📦" to "يجري فرز وتغليف طردك بمستودعنا"
+                        else -> "طردك: مُستلم ⚡" to "تم تسجيل وتثبيت طلبيتك بنجاح"
+                    }
                 }
 
                 RadarOrderState(
@@ -103,7 +124,8 @@ object RadarApiClient {
                     storeName = "متجر $sName",
                     storeLogoUrl = sLogo,
                     storeUrl = resolvedUrl,
-                    isMerchantMode = false
+                    isMerchantMode = false,
+                    isPickup = isPickup
                 )
             } else {
                 null

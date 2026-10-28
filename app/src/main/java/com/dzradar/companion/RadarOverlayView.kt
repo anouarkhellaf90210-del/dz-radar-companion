@@ -519,18 +519,19 @@ class RadarOverlayView(
         applyStationVisuals(1, animateMorph = false)
     }
 
-    private fun resolveStationTheme(station: Int): Triple<String, String, String> {
+    private fun resolveStationTheme(station: Int, isPickup: Boolean = false): Triple<String, String, String> {
         return when (station) {
             1 -> Triple("⏳", "#FBBF24", "#22FBBF24")
-            2 -> Triple("🎁", "#A855F7", "#22A855F7")
-            3 -> Triple("🚚", "#10B981", "#2210B981")
-            4 -> Triple("✅", "#34D399", "#2234D399")
+            2 -> if (isPickup) Triple("📦", "#38BDF8", "#2238BDF8") else Triple("🎁", "#A855F7", "#22A855F7")
+            3 -> if (isPickup) Triple("🏪", "#C084FC", "#22C084FC") else Triple("🚚", "#10B981", "#2210B981")
+            4 -> if (isPickup) Triple("🤝", "#34D399", "#2234D399") else Triple("✅", "#34D399", "#2234D399")
             else -> Triple("🛍️", "#D4AF37", "#22D4AF37")
         }
     }
+    }
 
-    private fun applyStationVisuals(station: Int, animateMorph: Boolean) {
-        val (iconSymbol, hexPrimary, hexHalo) = resolveStationTheme(station)
+    private fun applyStationVisuals(station: Int, animateMorph: Boolean, isPickup: Boolean = false) {
+        val (iconSymbol, hexPrimary, hexHalo) = resolveStationTheme(station, isPickup)
         val primaryColor = Color.parseColor(hexPrimary)
         val haloColor = Color.parseColor(hexHalo)
 
@@ -676,17 +677,17 @@ class RadarOverlayView(
                     merchantActionsContainer.visibility = View.GONE
                 }
             } else {
-                modalHeaderTitle.text = "رادار تتبع الطرد الحي"
+                modalHeaderTitle.text = if (data.isPickup) "رادار استلام الطلب من المحل 🏪" else "رادار تتبع الطرد الحي"
                 openStoreBtn.text = "العودة للمتجر 🌐"
                 stationLabels[0].text = "قيد التأكيد"
-                stationLabels[1].text = "تم التجهيز"
-                stationLabels[2].text = "خرج للتوصيل"
-                stationLabels[3].text = "تم الاستلام"
+                stationLabels[1].text = if (data.isPickup) "تجهيز بالمحل" else "تم التجهيز"
+                stationLabels[2].text = if (data.isPickup) "جاهز بالمحل" else "خرج للتوصيل"
+                stationLabels[3].text = if (data.isPickup) "تم الاستلام" else "تم الاستلام"
                 livePingDot.text = ""
                 merchantActionsContainer.visibility = View.GONE
             }
 
-            applyStationVisuals(data.station, animateMorph = shouldAnimate)
+            applyStationVisuals(data.station, animateMorph = shouldAnimate, isPickup = data.isPickup)
             if (data.storeLogoUrl.isNotBlank()) {
                 loadStoreLogoAsync(data.storeLogoUrl)
                 bubbleIcon.visibility = View.GONE
