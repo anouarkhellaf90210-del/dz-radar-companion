@@ -3,6 +3,8 @@ package com.dzradar.companion
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.content.Context
+import android.content.Intent
+import android.media.RingtoneManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -534,7 +536,7 @@ class RadarOverlayView(
                 val uriStr = radarPrefs.getString("customer_custom_tone_uri", null)
                 if (uriStr != null) {
                     try {
-                        val rt = android.media.RingtoneManager.getRingtone(context, android.net.Uri.parse(uriStr))
+                        val rt = RingtoneManager.getRingtone(context, android.net.Uri.parse(uriStr))
                         rt?.play()
                         uiHandler.postDelayed({ try { rt?.stop() } catch (_: Exception) {} }, 1800)
                     } catch (_: Exception) {}
@@ -582,15 +584,9 @@ class RadarOverlayView(
             }
         }
 
-        val savedToneIdx = radarPrefs.getInt("customer_tone_idx", 0)
-        val initialLabel = if (savedToneIdx == 5) {
-            "📱 " + radarPrefs.getString("customer_custom_tone_name", "نغمة الهاتف") + " ▼"
-        } else {
-            toneNames.getOrElse(savedToneIdx) { toneNames[0] }
-        }
-
+        val savedToneIdx = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, toneNames.size - 1)
         val toneSelectBtn = TextView(context).apply {
-            text = initialLabel
+            text = toneNames[savedToneIdx]
             setTextColor(Color.parseColor("#FBBF24"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
             typeface = Typeface.DEFAULT_BOLD
@@ -601,7 +597,7 @@ class RadarOverlayView(
                 setStroke(dp(1), Color.parseColor("#F59E0B"))
             }
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.25f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
                 leftMargin = dp(6)
             }
             setOnClickListener {
@@ -642,9 +638,9 @@ class RadarOverlayView(
                 setStroke(dp(1), Color.parseColor("#3F3F46"))
             }
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.95f)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.1f)
             setOnClickListener {
-                val cur = radarPrefs.getInt("customer_tone_idx", 0)
+                val cur = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, toneNames.size - 1)
                 playCustomerTonePreview(cur)
             }
         }
