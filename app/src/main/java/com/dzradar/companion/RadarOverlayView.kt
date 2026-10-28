@@ -541,8 +541,7 @@ class RadarOverlayView(
                         uiHandler.postDelayed({ try { rt?.stop() } catch (_: Exception) {} }, 1800)
                     } catch (_: Exception) {}
                 } else {
-                    val pIntent = Intent(context, MainActivity::class.java).apply {
-                        putExtra("action", "pick_ringtone")
+                    val pIntent = Intent(context, RingtonePickerActivity::class.java).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(pIntent)
@@ -682,8 +681,7 @@ class RadarOverlayView(
                         toneDropdownMenu.visibility = View.GONE
                         if (i == 5) {
                             toneSelectBtn.text = getToneDisplayLabel(5) + " ▼"
-                            val pIntent = Intent(context, MainActivity::class.java).apply {
-                                putExtra("action", "pick_ringtone")
+                            val pIntent = Intent(context, RingtonePickerActivity::class.java).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             context.startActivity(pIntent)
