@@ -91,6 +91,86 @@ class FloatingBubbleService : Service() {
         }
     }
 
+    
+    private fun wakeUpCustomerScreen() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            @Suppress("DEPRECATION")
+            val screenLock = pm?.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "dzradar:CustomerStationWakeup"
+            )
+            screenLock?.acquire(10000)
+        } catch (_: Exception) {}
+    }
+
+    private fun fireCustomerOrderNotification(data: RadarOrderState) {
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val alertChannelId = "dz_radar_urgent_customer_alerts_v2"
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (nm.getNotificationChannel(alertChannelId) == null) {
+                    val chan = NotificationChannel(
+                        alertChannelId,
+                        "تنبيهات حالة طلبيتك الفورية 📦",
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "إشعارات صوتية وبصرية فورية فوق شاشة القفل عند تغير محطة طلبيتك"
+                        enableLights(true)
+                        enableVibration(true)
+                        vibrationPattern = longArrayOf(0, 250, 120, 300)
+                        lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                    }
+                    nm.createNotificationChannel(chan)
+                }
+            }
+
+            val openIntent = Intent(this, MainActivity::class.java).apply {
+                this.data = Uri.parse("dzradar://track?expand=1&token=" + URLEncoder.encode(data.trackingToken, "UTF-8"))
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            val piFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            } else {
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            }
+            val pendingIntent = android.app.PendingIntent.getActivity(
+                this,
+                (System.currentTimeMillis() % 10000).toInt(),
+                openIntent,
+                piFlags
+            )
+
+            val titleText = data.storeName + " • " + data.statusTitle
+            val bodyText = data.statusSubtitle.ifBlank { "اضغط هنا لمتابعة حالة طلبيتك مباشرة" }
+
+            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Notification.Builder(this, alertChannelId)
+            } else {
+                @Suppress("DEPRECATION")
+                Notification.Builder(this)
+                    .setPriority(Notification.PRIORITY_MAX)
+                    .setDefaults(Notification.DEFAULT_ALL)
+            }
+
+            builder.setContentTitle(titleText)
+                .setContentText(bodyText)
+                .setStyle(Notification.BigTextStyle().bigText(bodyText))
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .setFullScreenIntent(pendingIntent, true)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                builder.setCategory(Notification.CATEGORY_CALL)
+                builder.setVisibility(Notification.VISIBILITY_PUBLIC)
+            }
+
+            nm.notify((System.currentTimeMillis() % 100000).toInt() + 60000, builder.build())
+        } catch (_: Exception) {}
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun ensureForegroundGuardian() {
@@ -208,7 +288,10 @@ class FloatingBubbleService : Service() {
                     lp.width = WindowManager.LayoutParams.WRAP_CONTENT
                     lp.height = WindowManager.LayoutParams.WRAP_CONTENT
                     lp.alpha = 1.0f
-                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                    @Suppress("DEPRECATION")
+                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
                     lp.x = savedBubbleX
                     lp.y = savedBubbleY
                     try {
@@ -217,8 +300,10 @@ class FloatingBubbleService : Service() {
                 }
                 overlayView?.visibility = View.VISIBLE
                 overlayView?.setStandbyMode(false)
+                wakeUpCustomerScreen()
                 if (data != null) {
                     overlayView?.updateData(data)
+                    fireCustomerOrderNotification(data)
                 }
                 overlayView?.requestLayout()
                 playStationTransitionAlert()
@@ -336,22 +421,57 @@ class FloatingBubbleService : Service() {
     }
 
     private fun playStationTransitionAlert() {
+        val toneIdx = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE).getInt("customer_tone_idx", 0)
         try {
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            val pattern = when (toneIdx) {
+                0 -> longArrayOf(0, 140, 80, 220)
+                1 -> longArrayOf(0, 90, 50, 150)
+                2 -> longArrayOf(0, 100, 60, 100, 60, 200)
+                3 -> longArrayOf(0, 200, 100, 300)
+                else -> longArrayOf(0, 280, 120, 380)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 110, 60, 160), -1))
+                vibrator?.vibrate(VibrationEffect.createWaveform(pattern, -1))
             } else {
                 @Suppress("DEPRECATION")
-                vibrator?.vibrate(250)
+                vibrator?.vibrate(300)
             }
         } catch (_: Exception) {}
 
+        if (toneIdx == 4) return
+
         try {
-            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 95)
-            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 260)
+            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
+            when (toneIdx) {
+                0 -> {
+                    toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 200)
+                    handler.postDelayed({
+                        try { toneGen.startTone(ToneGenerator.TONE_PROP_ACK, 350) } catch (_: Exception) {}
+                    }, 220)
+                }
+                1 -> {
+                    toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 140)
+                    handler.postDelayed({
+                        try { toneGen.startTone(ToneGenerator.TONE_CDMA_PIP, 260) } catch (_: Exception) {}
+                    }, 160)
+                }
+                2 -> {
+                    toneGen.startTone(ToneGenerator.TONE_SUP_RADIO_ACK, 150)
+                    handler.postDelayed({
+                        try { toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 280) } catch (_: Exception) {}
+                    }, 190)
+                }
+                3 -> {
+                    toneGen.startTone(ToneGenerator.TONE_CDMA_ABBR_ALERT, 240)
+                    handler.postDelayed({
+                        try { toneGen.startTone(ToneGenerator.TONE_PROP_ACK, 360) } catch (_: Exception) {}
+                    }, 260)
+                }
+            }
             handler.postDelayed({
                 try { toneGen.release() } catch (_: Exception) {}
-            }, 320)
+            }, 700)
         } catch (_: Exception) {}
     }
 

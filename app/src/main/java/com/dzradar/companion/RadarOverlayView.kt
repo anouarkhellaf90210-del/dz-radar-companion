@@ -509,6 +509,110 @@ class RadarOverlayView(
         actionsRow.addView(hideStandbyBtn)
         cardContainer.addView(actionsRow)
 
+        val toneNames = listOf(
+            "🎵 الكاشير 💰 ▼",
+            "🎵 كريستال ✨ ▼",
+            "🎵 نبض الرادار 📡 ▼",
+            "🎵 الجرس الملكي 👑 ▼",
+            "🎵 اهتزاز فقط 📳 ▼"
+        )
+        val radarPrefs = context.getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
+
+        fun playCustomerTonePreview(idx: Int) {
+            try {
+                val vib = context.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    vib?.vibrate(android.os.VibrationEffect.createWaveform(longArrayOf(0, 120, 60, 180), -1))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vib?.vibrate(250)
+                }
+            } catch (_: Exception) {}
+            if (idx == 4) return
+            try {
+                val tg = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 100)
+                when (idx) {
+                    0 -> {
+                        tg.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 200)
+                        uiHandler.postDelayed({ try { tg.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 350) } catch (_: Exception) {} }, 220)
+                    }
+                    1 -> {
+                        tg.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 140)
+                        uiHandler.postDelayed({ try { tg.startTone(android.media.ToneGenerator.TONE_CDMA_PIP, 260) } catch (_: Exception) {} }, 160)
+                    }
+                    2 -> {
+                        tg.startTone(android.media.ToneGenerator.TONE_SUP_RADIO_ACK, 150)
+                        uiHandler.postDelayed({ try { tg.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 280) } catch (_: Exception) {} }, 190)
+                    }
+                    3 -> {
+                        tg.startTone(android.media.ToneGenerator.TONE_CDMA_ABBR_ALERT, 240)
+                        uiHandler.postDelayed({ try { tg.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 360) } catch (_: Exception) {} }, 260)
+                    }
+                }
+                uiHandler.postDelayed({ try { tg.release() } catch (_: Exception) {} }, 700)
+            } catch (_: Exception) {}
+        }
+
+        val toneRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(8)
+            }
+        }
+
+        val savedToneIdx = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, toneNames.size - 1)
+        val toneSelectBtn = TextView(context).apply {
+            text = toneNames[savedToneIdx]
+            setTextColor(Color.parseColor("#FBBF24"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#18181B"))
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), Color.parseColor("#F59E0B"))
+            }
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
+                leftMargin = dp(6)
+            }
+            setOnClickListener {
+                val cur = radarPrefs.getInt("customer_tone_idx", 0)
+                val next = (cur + 1) % toneNames.size
+                radarPrefs.edit().putInt("customer_tone_idx", next).apply()
+                text = toneNames[next]
+                playCustomerTonePreview(next)
+                android.widget.Toast.makeText(context, "تم اختيار نغمة: " + toneNames[next].replace(" ▼", ""), android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        val testToneBtn = TextView(context).apply {
+            text = "🔔 تجربة الرنين"
+            setTextColor(Color.parseColor("#E4E4E7"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#18181B"))
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), Color.parseColor("#3F3F46"))
+            }
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.1f)
+            setOnClickListener {
+                val cur = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, toneNames.size - 1)
+                playCustomerTonePreview(cur)
+            }
+        }
+
+        toneRow.addView(toneSelectBtn)
+        toneRow.addView(testToneBtn)
+        cardContainer.addView(toneRow)
+
         sentinelPixelView = View(context).apply {
             layoutParams = LinearLayout.LayoutParams(1, 1)
             setBackgroundColor(Color.argb(2, 212, 175, 55))
