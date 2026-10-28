@@ -66,6 +66,7 @@ class RadarOverlayView(
 
     private val stationNodeDrawables = mutableListOf<GradientDrawable>()
     private val stationLabels = mutableListOf<TextView>()
+    private val stationNodeIcons = mutableListOf<TextView>()
     private val connectorLines = mutableListOf<View>()
 
     private var cardOpen = false
@@ -424,6 +425,7 @@ class RadarOverlayView(
                 gravity = Gravity.CENTER
                 layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
             }
+            stationNodeIcons.add(iconTv)
             nodeFrame.addView(iconTv)
             stepperTrackRow.addView(nodeFrame)
 
@@ -527,7 +529,6 @@ class RadarOverlayView(
             4 -> if (isPickup) Triple("🤝", "#34D399", "#2234D399") else Triple("✅", "#34D399", "#2234D399")
             else -> Triple("🛍️", "#D4AF37", "#22D4AF37")
         }
-    }
     }
 
     private fun applyStationVisuals(station: Int, animateMorph: Boolean, isPickup: Boolean = false) {
@@ -676,13 +677,25 @@ class RadarOverlayView(
                 } else {
                     merchantActionsContainer.visibility = View.GONE
                 }
+                if (stationNodeIcons.size >= 4) {
+                    stationNodeIcons[0].text = "⏳"
+                    stationNodeIcons[1].text = "🎁"
+                    stationNodeIcons[2].text = "🚚"
+                    stationNodeIcons[3].text = "✅"
+                }
             } else {
-                modalHeaderTitle.text = if (data.isPickup) "رادار استلام الطلب من المحل 🏪" else "رادار تتبع الطرد الحي"
+                modalHeaderTitle.text = if (data.isPickup) "رادار الاستلام من المحل 🏪" else "رادار تتبع الطرد الحي"
                 openStoreBtn.text = "العودة للمتجر 🌐"
                 stationLabels[0].text = "قيد التأكيد"
                 stationLabels[1].text = if (data.isPickup) "تجهيز بالمحل" else "تم التجهيز"
                 stationLabels[2].text = if (data.isPickup) "جاهز بالمحل" else "خرج للتوصيل"
-                stationLabels[3].text = if (data.isPickup) "تم الاستلام" else "تم الاستلام"
+                stationLabels[3].text = "تم الاستلام"
+                if (stationNodeIcons.size >= 4) {
+                    stationNodeIcons[0].text = "⏳"
+                    stationNodeIcons[1].text = if (data.isPickup) "📦" else "🎁"
+                    stationNodeIcons[2].text = if (data.isPickup) "🏪" else "🚚"
+                    stationNodeIcons[3].text = if (data.isPickup) "🤝" else "✅"
+                }
                 livePingDot.text = ""
                 merchantActionsContainer.visibility = View.GONE
             }
