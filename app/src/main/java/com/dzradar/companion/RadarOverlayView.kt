@@ -511,13 +511,13 @@ class RadarOverlayView(
         actionsRow.addView(hideStandbyBtn)
         cardContainer.addView(actionsRow)
 
-        val toneNames = listOf(
-            "🎵 الكاشير 💰 ▼",
-            "🎵 كريستال ✨ ▼",
-            "🎵 نبض الرادار 📡 ▼",
-            "🎵 الجرس الملكي 👑 ▼",
-            "🎵 اهتزاز فقط 📳 ▼",
-            "📱 نغمة من الهاتف... 🎶"
+        val toneOptionTitles = listOf(
+            "💰 الكاشير الذهبي (Cha-Ching)",
+            "✨ كريستال السكينة (Crystal)",
+            "📡 نبض الرادار (Sonar Pulse)",
+            "👑 الجرس الملكي (Royal Bell)",
+            "📳 اهتزاز ميكانيكي فقط",
+            "📱 نغمة مخصصة من هاتفي... 🎶"
         )
         val radarPrefs = context.getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
 
@@ -584,9 +584,39 @@ class RadarOverlayView(
             }
         }
 
-        val savedToneIdx = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, toneNames.size - 1)
+        var isDropdownOpen = false
+        val toneDropdownMenu = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#121215"))
+                cornerRadius = dp(14).toFloat()
+                setStroke(dp(1), Color.parseColor("#F59E0B"))
+            }
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(6)
+            }
+        }
+
+        fun getToneDisplayLabel(idx: Int): String {
+            return when (idx) {
+                0 -> "🎵 الكاشير 💰"
+                1 -> "🎵 كريستال ✨"
+                2 -> "🎵 نبض الرادار 📡"
+                3 -> "🎵 الجرس الملكي 👑"
+                4 -> "📳 اهتزاز فقط"
+                5 -> "📱 " + radarPrefs.getString("customer_custom_tone_name", "نغمة الهاتف")
+                else -> "🎵 الكاشير 💰"
+            }
+        }
+
+        val initialIdx = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, 5)
         val toneSelectBtn = TextView(context).apply {
-            text = toneNames[savedToneIdx]
+            text = getToneDisplayLabel(initialIdx) + " ▼"
             setTextColor(Color.parseColor("#FBBF24"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
             typeface = Typeface.DEFAULT_BOLD
@@ -597,32 +627,8 @@ class RadarOverlayView(
                 setStroke(dp(1), Color.parseColor("#F59E0B"))
             }
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.25f).apply {
                 leftMargin = dp(6)
-            }
-            setOnClickListener {
-                val cur = radarPrefs.getInt("customer_tone_idx", 0)
-                val next = (cur + 1) % toneNames.size
-                if (next == 5) {
-                    val pIntent = Intent(context, MainActivity::class.java).apply {
-                        putExtra("action", "pick_ringtone")
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(pIntent)
-                } else {
-                    radarPrefs.edit().putInt("customer_tone_idx", next).apply()
-                    text = toneNames[next]
-                    playCustomerTonePreview(next)
-                    android.widget.Toast.makeText(context, "تم اختيار: " + toneNames[next].replace(" ▼", ""), android.widget.Toast.LENGTH_SHORT).show()
-                }
-            }
-            setOnLongClickListener {
-                val pIntent = Intent(context, MainActivity::class.java).apply {
-                    putExtra("action", "pick_ringtone")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(pIntent)
-                true
             }
         }
 
@@ -638,16 +644,101 @@ class RadarOverlayView(
                 setStroke(dp(1), Color.parseColor("#3F3F46"))
             }
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.1f)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.95f)
             setOnClickListener {
-                val cur = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, toneNames.size - 1)
+                val cur = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, 5)
                 playCustomerTonePreview(cur)
+            }
+        }
+
+        fun buildDropdownItems() {
+            toneDropdownMenu.removeAllViews()
+            val activeIdx = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, 5)
+
+            val header = TextView(context).apply {
+                text = "اختر نغمة التنبيه للرادار:"
+                setTextColor(Color.parseColor("#A1A1AA"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                setPadding(dp(8), dp(4), dp(8), dp(6))
+            }
+            toneDropdownMenu.addView(header)
+
+            for (i in 0 until toneOptionTitles.size) {
+                val isSelected = i == activeIdx
+                val itemRow = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(8).toFloat()
+                        setColor(if (isSelected) Color.parseColor("#27272A") else Color.TRANSPARENT)
+                    }
+                    setPadding(dp(10), dp(8), dp(10), dp(8))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    setOnClickListener {
+                        isDropdownOpen = false
+                        toneDropdownMenu.visibility = View.GONE
+                        if (i == 5) {
+                            toneSelectBtn.text = getToneDisplayLabel(5) + " ▼"
+                            val pIntent = Intent(context, MainActivity::class.java).apply {
+                                putExtra("action", "pick_ringtone")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(pIntent)
+                        } else {
+                            radarPrefs.edit().putInt("customer_tone_idx", i).apply()
+                            toneSelectBtn.text = getToneDisplayLabel(i) + " ▼"
+                            playCustomerTonePreview(i)
+                            android.widget.Toast.makeText(context, "تم تفعيل " + getToneDisplayLabel(i), android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+
+                val titleTv = TextView(context).apply {
+                    text = if (i == 5 && radarPrefs.getString("customer_custom_tone_name", null) != null) {
+                        "📱 " + radarPrefs.getString("customer_custom_tone_name", "") + " (من الهاتف)"
+                    } else {
+                        toneOptionTitles[i]
+                    }
+                    setTextColor(if (isSelected) Color.parseColor("#FBBF24") else Color.WHITE)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                    typeface = if (isSelected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+
+                val checkTv = TextView(context).apply {
+                    text = if (isSelected) "✓" else ""
+                    setTextColor(Color.parseColor("#34D399"))
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    typeface = Typeface.DEFAULT_BOLD
+                }
+
+                itemRow.addView(titleTv)
+                itemRow.addView(checkTv)
+                toneDropdownMenu.addView(itemRow)
+            }
+        }
+
+        toneSelectBtn.setOnClickListener {
+            isDropdownOpen = !isDropdownOpen
+            if (isDropdownOpen) {
+                buildDropdownItems()
+                toneDropdownMenu.visibility = View.VISIBLE
+                val curIdx = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, 5)
+                toneSelectBtn.text = getToneDisplayLabel(curIdx) + " ▲"
+            } else {
+                toneDropdownMenu.visibility = View.GONE
+                val curIdx = radarPrefs.getInt("customer_tone_idx", 0).coerceIn(0, 5)
+                toneSelectBtn.text = getToneDisplayLabel(curIdx) + " ▼"
             }
         }
 
         toneRow.addView(toneSelectBtn)
         toneRow.addView(testToneBtn)
         cardContainer.addView(toneRow)
+        cardContainer.addView(toneDropdownMenu)
 
         sentinelPixelView = View(context).apply {
             layoutParams = LinearLayout.LayoutParams(1, 1)
