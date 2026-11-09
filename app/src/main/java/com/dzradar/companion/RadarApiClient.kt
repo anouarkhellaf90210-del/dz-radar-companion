@@ -89,7 +89,13 @@ object RadarApiClient {
                     }
                 }
 
+                val rawAddrText = (orderObj.optString("customer_address_text", "") + " " + orderObj.optString("notes", "") + " " + orderObj.optString("wilaya", "") + " " + orderObj.optString("commune", "")).lowercase()
                 val isPickup = orderObj.optBoolean("is_pickup", root.optBoolean("is_pickup", false)) ||
+                    rawAddrText.contains("pickup") ||
+                    rawAddrText.contains("استلام") ||
+                    rawAddrText.contains("سأحضر بنفسي") ||
+                    rawAddrText.contains("شخص من العائلة") ||
+                    rawAddrText.contains("مرسول") ||
                     orderObj.optString("delivery_type", "").lowercase() == "pickup" ||
                     orderObj.optString("wilaya", "").contains("استلام") ||
                     orderObj.optString("commune", "").contains("استلام") ||

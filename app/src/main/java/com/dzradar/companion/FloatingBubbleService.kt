@@ -52,6 +52,7 @@ class FloatingBubbleService : Service() {
     private var targetStoreUrl: String = ""
     private var lastKnownStation: Int = 0
     private var lastKnownStatusTitle: String = ""
+    private var lastNotifiedAlertKey: String = ""
     @Volatile private var isOverlayInStandby: Boolean = false
     private var windowLayoutParams: WindowManager.LayoutParams? = null
     private var savedBubbleX: Int = 24
@@ -106,6 +107,9 @@ class FloatingBubbleService : Service() {
 
     private fun fireCustomerOrderNotification(data: RadarOrderState) {
         try {
+            val alertKey = "${data.trackingToken}:${data.station}:${data.statusTitle}"
+            if (alertKey == lastNotifiedAlertKey) return
+            lastNotifiedAlertKey = alertKey
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             val alertChannelId = "dz_radar_urgent_customer_alerts_v2"
 
@@ -167,7 +171,7 @@ class FloatingBubbleService : Service() {
                 builder.setVisibility(Notification.VISIBILITY_PUBLIC)
             }
 
-            nm.notify((System.currentTimeMillis() % 100000).toInt() + 60000, builder.build())
+            nm.notify(60001, builder.build())
         } catch (_: Exception) {}
     }
 
@@ -543,7 +547,7 @@ class FloatingBubbleService : Service() {
                                     prefs.apply()
                                 }
 
-                                if (incomingStation in 1..4 && lastKnownStation != 0 && incomingStation != lastKnownStation) {
+                                if (isWakeup && incomingStation in 1..4 && lastKnownStation != 0 && incomingStation != lastKnownStation) {
                                     forcePopup = true
                                 }
 
