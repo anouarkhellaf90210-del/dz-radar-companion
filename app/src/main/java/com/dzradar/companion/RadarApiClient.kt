@@ -189,7 +189,8 @@ object RadarApiClient {
                 val wilaya = activeObj?.optString("wilaya", "") ?: ""
                 val totalDzd = activeObj?.optInt("total", 0) ?: 0
                 val itemsStr = activeObj?.optString("items_summary", "") ?: ""
-                val nextLabel = activeObj?.optString("next_action_label", "⚡ قبول وتأكيد الطلب فوراً") ?: ""
+                val isPickup = (activeObj?.optBoolean("is_pickup", false) == true) || wilaya.contains("استلام") || itemsStr.contains("استلام")
+                val nextLabel = activeObj?.optString("next_action_label", if (isPickup) "⚡ قبول وتجهيز الطلب بالمحل 🏪" else "⚡ قبول وتأكيد الطلب فوراً") ?: ""
 
                 val title = if (ordId.isNotBlank()) {
                     "👤 $custName ($wilaya) • ${totalDzd} د.ج"
@@ -221,7 +222,8 @@ object RadarApiClient {
                     newCount = newCnt,
                     preparingCount = prepCnt,
                     shippingCount = shipCnt,
-                    deliveredCount = delivCnt
+                    deliveredCount = delivCnt,
+                    isPickup = isPickup
                 )
             } else {
                 null

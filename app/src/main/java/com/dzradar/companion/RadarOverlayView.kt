@@ -73,6 +73,7 @@ class RadarOverlayView(
 
     private var cardOpen = false
     private var currentStation = 0
+    private var currentIsPickup = false
     private var lastLoadedLogoUrl = ""
     private var currentActiveOrderId = ""
     private var currentCustomerPhone = ""
@@ -111,8 +112,7 @@ class RadarOverlayView(
                     uiHandler.post {
                         storeLogoImg.setImageBitmap(circleBmp)
                         storeLogoImg.visibility = View.VISIBLE
-                        bubbleLogoImg.setImageBitmap(circleBmp)
-                        bubbleLogoImg.visibility = View.VISIBLE
+                        bubbleLogoImg.visibility = View.GONE
                     }
                 }
             } catch (_: Exception) {}
@@ -875,8 +875,9 @@ class RadarOverlayView(
 
     fun updateData(data: RadarOrderState) {
         uiHandler.post {
-            val shouldAnimate = currentStation != data.station
+            val shouldAnimate = currentStation != data.station || currentIsPickup != data.isPickup
             currentStation = data.station
+            currentIsPickup = data.isPickup
             storeBadgeText.text = data.storeName
             currentStatusTitle.text = data.statusTitle
             currentStatusSubtitle.text = data.statusSubtitle
@@ -889,9 +890,9 @@ class RadarOverlayView(
                 modalHeaderTitle.text = "رادار قيادة التاجر"
                 openStoreBtn.text = "لوحة التاجر 🌐"
                 stationLabels[0].text = "جديد (${data.newCount})"
-                stationLabels[1].text = "تجهيز (${data.preparingCount})"
-                stationLabels[2].text = "شحن (${data.shippingCount})"
-                stationLabels[3].text = "تم (${data.deliveredCount})"
+                stationLabels[1].text = if (data.isPickup) "بالمحل (${data.preparingCount})" else "تجهيز (${data.preparingCount})"
+                stationLabels[2].text = if (data.isPickup) "جاهز (${data.shippingCount})" else "شحن (${data.shippingCount})"
+                stationLabels[3].text = if (data.isPickup) "استلام (${data.deliveredCount})" else "تم (${data.deliveredCount})"
 
                 if (data.newCount > 0) {
                     livePingDot.text = data.newCount.toString()
@@ -908,9 +909,9 @@ class RadarOverlayView(
                 }
                 if (stationNodeIcons.size >= 4) {
                     stationNodeIcons[0].text = "⏳"
-                    stationNodeIcons[1].text = "🎁"
-                    stationNodeIcons[2].text = "🚚"
-                    stationNodeIcons[3].text = "✅"
+                    stationNodeIcons[1].text = if (data.isPickup) "📦" else "🎁"
+                    stationNodeIcons[2].text = if (data.isPickup) "🏪" else "🚚"
+                    stationNodeIcons[3].text = if (data.isPickup) "🤝" else "✅"
                 }
             } else {
                 modalHeaderTitle.text = if (data.isPickup) "رادار الاستلام من المحل 🏪" else "رادار تتبع الطرد الحي"
@@ -930,11 +931,9 @@ class RadarOverlayView(
             }
 
             applyStationVisuals(data.station, animateMorph = shouldAnimate, isPickup = data.isPickup)
+            bubbleIcon.visibility = View.VISIBLE
             if (data.storeLogoUrl.isNotBlank()) {
                 loadStoreLogoAsync(data.storeLogoUrl)
-                bubbleIcon.visibility = View.GONE
-            } else {
-                bubbleIcon.visibility = View.VISIBLE
             }
         }
     }
