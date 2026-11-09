@@ -92,15 +92,25 @@ object RadarApiClient {
                 val isPickup = orderObj.optBoolean("is_pickup", root.optBoolean("is_pickup", false)) ||
                     orderObj.optString("delivery_type", "").lowercase() == "pickup" ||
                     orderObj.optString("wilaya", "").contains("استلام") ||
+                    orderObj.optString("commune", "").contains("استلام") ||
+                    orderObj.optString("customer_address_text", "").contains("PICKUP") ||
+                    orderObj.optString("customer_address_text", "").contains("استلام") ||
                     orderObj.optString("shipping_address", "").contains("استلام") ||
                     orderObj.optString("notes", "").contains("PICKUP")
 
                 val serverTitle = orderObj.optString("status_title", root.optString("status_title", "")).trim()
                 val serverSubtitle = orderObj.optString("status_subtitle", root.optString("status_subtitle", "")).trim()
 
-                val (title, subtitle) = if (serverTitle.isNotEmpty()) {
+                val (title, subtitle) = if (isPickup) {
+                    when (station) {
+                        4 -> "سلعتك: تم الاستلام من المحل 🤝" to "تشرفت بزيارتك للمحل، تتهنى بمشترياتك!"
+                        3 -> "سلعتك: جاهزة بالمحل 🏪" to "سلعتك واجدة ومحفوظة لك بالمحل! تفضل باستلامها متى شئت"
+                        2 -> "سلعتك: قيد التجهيز بالمحل 📦" to "يقوم التاجر الآن بتحضير سلعتك وحفظها لك في المحل"
+                        else -> "طلبيتك: مسجلة للاستلام بالمحل 🏪" to "سيتصل بك التاجر لتأكيد جاهزية سلعتك بالمحل"
+                    }
+                } else if (serverTitle.isNotEmpty()) {
                     serverTitle to serverSubtitle
-                } else if (isPickup) {
+                } else if (false) {
                     when (station) {
                         4 -> "تم الاستلام من المحل 🤝" to "تشرفت بزيارتك للمحل، تتهنى بسلعتك!"
                         3 -> "سلعتك: جاهزة بالمحل 🏪" to "سلعتك واجدة في المحل! تفضل بالحضور لاستلامها متى شئت"
