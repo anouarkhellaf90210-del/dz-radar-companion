@@ -771,7 +771,7 @@ class FloatingBubbleService : Service() {
     }
 
     private fun triggerFetch(forceExpandOnFirstLoad: Boolean = false) {
-        if (!forceExpandOnFirstLoad && !isFetching.compareAndSet(false, true)) {
+        if (!isFetching.compareAndSet(false, true)) {
             return
         }
         Thread {
