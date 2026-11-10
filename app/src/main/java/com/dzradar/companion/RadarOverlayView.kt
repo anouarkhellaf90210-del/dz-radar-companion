@@ -889,7 +889,7 @@ class RadarOverlayView(
             if (data.isMerchantMode) {
                 modalHeaderTitle.text = "رادار قيادة التاجر"
                 openStoreBtn.text = "لوحة التاجر 🌐"
-                stationLabels[0].text = "جديد (${data.newCount})"
+                stationLabels[0].text = if (data.isPickup) "بالمحل (${data.newCount})" else "جديد (${data.newCount})"
                 stationLabels[1].text = if (data.isPickup) "بالمحل (${data.preparingCount})" else "تجهيز (${data.preparingCount})"
                 stationLabels[2].text = if (data.isPickup) "جاهز (${data.shippingCount})" else "شحن (${data.shippingCount})"
                 stationLabels[3].text = if (data.isPickup) "استلام (${data.deliveredCount})" else "تم (${data.deliveredCount})"

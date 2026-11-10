@@ -630,11 +630,7 @@ class FloatingBubbleService : Service() {
                 startActivity(browserIntent)
             },
             onKillCompanion = {
-                getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
-                    .edit()
-                    .putBoolean("is_overlay_in_standby", false)
-                    .apply()
-                stopSelf()
+                enterStandbyMode()
             },
             onHideOverlay = {
                 enterStandbyMode()
@@ -771,9 +767,10 @@ class FloatingBubbleService : Service() {
     }
 
     private fun triggerFetch(forceExpandOnFirstLoad: Boolean = false) {
-        if (!isFetching.compareAndSet(false, true)) {
+        if (!forceExpandOnFirstLoad && !isFetching.compareAndSet(false, true)) {
             return
         }
+        isFetching.set(true)
         Thread {
             try {
                 val prefs = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
