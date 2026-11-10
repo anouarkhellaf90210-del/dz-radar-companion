@@ -752,7 +752,7 @@ class RadarOverlayView(
 
     private fun resolveStationTheme(station: Int, isPickup: Boolean = false): Triple<String, String, String> {
         return when (station) {
-            1 -> Triple("⏳", "#FBBF24", "#22FBBF24")
+            1 -> if (isPickup) Triple("🏪", "#38BDF8", "#2238BDF8") else Triple("⏳", "#FBBF24", "#22FBBF24")
             2 -> if (isPickup) Triple("📦", "#38BDF8", "#2238BDF8") else Triple("🎁", "#A855F7", "#22A855F7")
             3 -> if (isPickup) Triple("🏪", "#C084FC", "#22C084FC") else Triple("🚚", "#10B981", "#2210B981")
             4 -> if (isPickup) Triple("🤝", "#34D399", "#2234D399") else Triple("✅", "#34D399", "#2234D399")
@@ -916,12 +916,12 @@ class RadarOverlayView(
             } else {
                 modalHeaderTitle.text = if (data.isPickup) "رادار الاستلام من المحل 🏪" else "رادار تتبع الطرد الحي"
                 openStoreBtn.text = "العودة للمتجر 🌐"
-                stationLabels[0].text = "قيد التأكيد"
+                stationLabels[0].text = if (data.isPickup) "طلب بالمحل" else "قيد التأكيد"
                 stationLabels[1].text = if (data.isPickup) "تجهيز بالمحل" else "تم التجهيز"
                 stationLabels[2].text = if (data.isPickup) "جاهز بالمحل" else "خرج للتوصيل"
                 stationLabels[3].text = "تم الاستلام"
                 if (stationNodeIcons.size >= 4) {
-                    stationNodeIcons[0].text = "⏳"
+                    stationNodeIcons[0].text = if (data.isPickup) "🏪" else "⏳"
                     stationNodeIcons[1].text = if (data.isPickup) "📦" else "🎁"
                     stationNodeIcons[2].text = if (data.isPickup) "🏪" else "🚚"
                     stationNodeIcons[3].text = if (data.isPickup) "🤝" else "✅"

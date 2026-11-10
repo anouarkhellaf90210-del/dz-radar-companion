@@ -530,8 +530,14 @@ class FloatingBubbleService : Service() {
                                             } else if (k == "slug" && v.isNotBlank()) {
                                                 merchantSlug = v.trim()
                                                 prefs.putString("merchant_slug", merchantSlug)
-                                            } else if (k == "token" && v.isNotBlank() && v != "ACTIVE-ORDER" && v != "DEMO-TRACK-DZ" && v != "SENTINEL-IDLE" && v != "latest") {
-                                                trackingToken = v.trim()
+                                            } else if (k == "token" && v.isNotBlank() && v != "ACTIVE-ORDER" && v != "DEMO-TRACK-DZ" && v != "SENTINEL-IDLE") {
+                                                val cleanTok = v.trim()
+                                                if (cleanTok != trackingToken) {
+                                                    lastKnownStation = 0
+                                                    lastKnownStatusTitle = ""
+                                                    prefs.putInt("last_known_station", 0).putString("last_known_status_title", "")
+                                                }
+                                                trackingToken = cleanTok
                                                 prefs.putString("last_token", trackingToken)
                                             } else if (k == "store_url" && v.startsWith("http")) {
                                                 targetStoreUrl = v.trim()
