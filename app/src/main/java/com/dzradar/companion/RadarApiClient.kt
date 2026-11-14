@@ -28,6 +28,9 @@ data class RadarOrderState(
 )
 
 object RadarApiClient {
+    @Volatile var realtimeUrl: String = ""
+    @Volatile var realtimeKey: String = ""
+    @Volatile var lastStoreId: String = ""
     @Volatile var baseOrigin: String = "https://my-private-store-app.vercel.app"
     @Volatile var latestStoreUrl: String = "https://my-private-store-app.vercel.app/s/dzball"
 
@@ -62,6 +65,13 @@ object RadarApiClient {
                 reader.close()
 
                 val root = JSONObject(response)
+                root.optJSONObject("realtime")?.let { rt ->
+                    val u = rt.optString("url", "").trim()
+                    val k = rt.optString("key", "").trim()
+                    if (u.isNotBlank() && k.isNotBlank()) { realtimeUrl = u; realtimeKey = k }
+                }
+                val sid = root.optString("store_id", "").trim()
+                if (sid.isNotBlank()) lastStoreId = sid
                 val orderObj = root.optJSONObject("order") ?: root.optJSONObject("data") ?: root
 
                 val resolvedToken = orderObj.optString("tracking_token", root.optString("tracking_token", cleanToken)).ifBlank { cleanToken }
@@ -172,6 +182,13 @@ object RadarApiClient {
                 reader.close()
 
                 val root = JSONObject(response)
+                root.optJSONObject("realtime")?.let { rt ->
+                    val u = rt.optString("url", "").trim()
+                    val k = rt.optString("key", "").trim()
+                    if (u.isNotBlank() && k.isNotBlank()) { realtimeUrl = u; realtimeKey = k }
+                }
+                val sid = root.optString("store_id", "").trim()
+                if (sid.isNotBlank()) lastStoreId = sid
                 val sName = root.optString("store_name", "متجري").trim().ifBlank { "متجري" }
                 val sLogo = root.optString("store_logo", "").trim()
                 val sSlug = root.optString("store_slug", cleanSlug).trim().ifBlank { "dzball" }

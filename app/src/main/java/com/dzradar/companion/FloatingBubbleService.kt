@@ -62,6 +62,7 @@ class FloatingBubbleService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var backgroundScheduler: ScheduledExecutorService? = null
     private val isFetching = AtomicBoolean(false)
+    private val realtimeClient = SupabaseRealtimeClient { triggerFetch() }
 
     private val handler = Handler(Looper.getMainLooper())
     @Volatile private var isScreenOn = true
@@ -87,7 +88,7 @@ class FloatingBubbleService : Service() {
         override fun run() {
             if (isRunning) {
                 triggerFetch()
-                handler.postDelayed(this, 3000)
+                handler.postDelayed(this, if (realtimeClient.isConnected) 180000L else 20000L)
             }
         }
     }
@@ -769,7 +770,7 @@ class FloatingBubbleService : Service() {
                     triggerFetch()
                 }
             } catch (_: Exception) {}
-        }, 2, 3, TimeUnit.SECONDS)
+        }, 5, 180, TimeUnit.SECONDS)
     }
 
     private fun triggerFetch(forceExpandOnFirstLoad: Boolean = false) {
@@ -789,6 +790,13 @@ class FloatingBubbleService : Service() {
                             (lastMerchantNewCount >= 0 && data.newCount > lastMerchantNewCount)
 
                         lastResolvedOrderToken = data.trackingToken
+                        if (RadarApiClient.realtimeUrl.isNotBlank() && RadarApiClient.lastStoreId.isNotBlank()) {
+                            realtimeClient.ensureStarted(
+                                RadarApiClient.realtimeUrl,
+                                RadarApiClient.realtimeKey,
+                                "store_id=eq." + RadarApiClient.lastStoreId
+                            )
+                        }
                         lastMerchantNewCount = data.newCount
                         lastKnownStation = data.station
 
@@ -856,6 +864,7 @@ class FloatingBubbleService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
+        try { realtimeClient.stop() } catch (_: Exception) {}
         try { backgroundScheduler?.shutdownNow() } catch (_: Exception) {}
         try { localServer?.close() } catch (_: Exception) {}
         try {
