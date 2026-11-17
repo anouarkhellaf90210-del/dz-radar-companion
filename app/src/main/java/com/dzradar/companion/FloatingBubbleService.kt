@@ -88,7 +88,7 @@ class FloatingBubbleService : Service() {
         override fun run() {
             if (isRunning) {
                 triggerFetch()
-                handler.postDelayed(this, if (realtimeClient.isConnected) 180000L else 20000L)
+                handler.postDelayed(this, if (realtimeClient.isConnected) 300000L else 90000L)
             }
         }
     }
@@ -774,6 +774,9 @@ class FloatingBubbleService : Service() {
     }
 
     private fun triggerFetch(forceExpandOnFirstLoad: Boolean = false) {
+        /* QUOTA_SHIELD_SCREEN_IDLE */
+        if (!forceExpandOnFirstLoad && !isScreenOn) return
+        if (!forceExpandOnFirstLoad && radarMode != "merchant" && (trackingToken.isBlank() || trackingToken == "latest" || trackingToken == "SENTINEL-IDLE")) return
         if (!forceExpandOnFirstLoad && !isFetching.compareAndSet(false, true)) {
             return
         }
@@ -822,6 +825,9 @@ class FloatingBubbleService : Service() {
                     }
                 }
 
+                if (RadarApiClient.realtimeUrl.isNotBlank() && tokenToFetch != "latest") {
+                    realtimeClient.ensureStarted(RadarApiClient.realtimeUrl, RadarApiClient.realtimeKey, "tracking_token=eq." + tokenToFetch)
+                }
                 val data = RadarApiClient.fetchOrder(tokenToFetch) ?: (if (tokenToFetch != "latest") RadarApiClient.fetchOrder("latest") else null)
                 if (data != null) {
                     val savedStation = if (lastKnownStation != 0) lastKnownStation else prefs.getInt("last_known_station", 0)

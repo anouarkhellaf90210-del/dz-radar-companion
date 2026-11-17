@@ -51,12 +51,11 @@ object RadarApiClient {
         val cleanToken = if (token.isBlank() || token == "SENTINEL-IDLE" || token == "DEMO-TRACK-DZ") "latest" else token.trim()
         return try {
             val encodedToken = URLEncoder.encode(cleanToken, "UTF-8")
-            val endpoint = "$baseOrigin/api/orders/track/$encodedToken?_cb=${System.currentTimeMillis()}"
+            val endpoint = "$baseOrigin/api/orders/track/$encodedToken"
             val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 5000
                 readTimeout = 5000
-                setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
             }
 
             if (conn.responseCode == 200) {
@@ -168,12 +167,11 @@ object RadarApiClient {
             val actionPart = if (advanceOrderId.isNotBlank()) {
                 "&action=advance&order_id=${URLEncoder.encode(advanceOrderId.trim(), "UTF-8")}"
             } else ""
-            val endpoint = "$baseOrigin/api/merchant/companion?slug=$encodedSlug$actionPart&_cb=${System.currentTimeMillis()}"
+            val endpoint = "$baseOrigin/api/merchant/companion?slug=$encodedSlug$actionPart"
             val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 5000
                 readTimeout = 5000
-                setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
             }
 
             if (conn.responseCode == 200) {
