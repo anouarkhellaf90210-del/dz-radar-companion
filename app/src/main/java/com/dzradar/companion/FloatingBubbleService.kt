@@ -392,8 +392,39 @@ class FloatingBubbleService : Service() {
         val isBootStandby = intent?.getBooleanExtra("boot_standby", false) ?: false
         val shouldExpand = intent?.getBooleanExtra("expand", false) ?: false
 
+        /* FCM_INSTANT_0MS_STATE */
+        val fcmStation = intent?.getIntExtra("fcm_station", 0) ?: 0
+        val fcmTitle = intent?.getStringExtra("fcm_status_title") ?: ""
+        val fcmSubtitle = intent?.getStringExtra("fcm_status_subtitle") ?: ""
+        val fcmStoreName = intent?.getStringExtra("fcm_store_name") ?: ""
+        val fcmStoreSlug = intent?.getStringExtra("fcm_store_slug") ?: ""
+        val fcmIsPickup = intent?.getBooleanExtra("fcm_is_pickup", false) ?: false
+
+        val instantFcmState = if (fcmStation in 1..4 && fcmTitle.isNotBlank()) {
+            val resolvedSlug = fcmStoreSlug.ifBlank { "dzball" }
+            val resolvedStoreTitle = if (fcmStoreName.isNotBlank()) "متجر $fcmStoreName" else "المتجر"
+            lastKnownStation = fcmStation
+            lastKnownStatusTitle = fcmTitle
+            prefs.edit()
+                .putInt("last_known_station", fcmStation)
+                .putString("last_known_status_title", fcmTitle)
+                .putBoolean("is_order_terminal", fcmStation >= 4)
+                .apply()
+            RadarOrderState(
+                trackingToken = trackingToken,
+                station = fcmStation,
+                statusTitle = fcmTitle,
+                statusSubtitle = fcmSubtitle,
+                storeName = resolvedStoreTitle,
+                storeLogoUrl = "",
+                storeUrl = "${RadarApiClient.baseOrigin}/s/$resolvedSlug",
+                isMerchantMode = false,
+                isPickup = fcmIsPickup
+            )
+        } else null
+
         if (shouldExpand) {
-            exitStandbyAndExpand()
+            exitStandbyAndExpand(instantFcmState)
         } else if (isBootStandby || prefs.getBoolean("is_overlay_in_standby", false)) {
             enterStandbyMode()
         }

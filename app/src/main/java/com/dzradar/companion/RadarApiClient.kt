@@ -51,10 +51,13 @@ object RadarApiClient {
         val cleanToken = if (token.isBlank() || token == "SENTINEL-IDLE" || token == "DEMO-TRACK-DZ") "latest" else token.trim()
         return try {
             val encodedToken = URLEncoder.encode(cleanToken, "UTF-8")
-            val endpoint = "$baseOrigin/api/orders/track/$encodedToken"
+            val endpoint = "$baseOrigin/api/orders/track/$encodedToken?fresh=1&t=${System.currentTimeMillis()}"
             val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 5000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) DzRadar/2.0")
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 7000
                 readTimeout = 5000
             }
 

@@ -34,6 +34,12 @@ class DzFcmMessagingService : FirebaseMessagingService() {
                 if (trackingToken.isNotBlank()) putExtra("token", trackingToken)
                 if (storeSlug.isNotBlank()) putExtra("merchant_slug", storeSlug)
                 putExtra("expand", true)
+                putExtra("fcm_station", data["station"]?.toIntOrNull() ?: 0)
+                putExtra("fcm_status_title", data["status_title"] ?: "")
+                putExtra("fcm_status_subtitle", data["status_subtitle"] ?: "")
+                putExtra("fcm_store_name", data["store_name"] ?: "")
+                putExtra("fcm_store_slug", data["store_slug"] ?: "")
+                putExtra("fcm_is_pickup", data["is_pickup"] == "1")
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(srvIntent)
