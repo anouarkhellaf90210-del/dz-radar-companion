@@ -500,8 +500,8 @@ class FloatingBubbleService : Service() {
         } catch (_: Exception) {}
     }
 
-    private fun startLocalLoopbackBridge()
-        DzFcmMessagingService.syncCurrentToken(this) {
+    private fun startLocalLoopbackBridge() {
+        DzFcmMessagingService.syncCurrentToken(this)
         Thread {
             try {
                 localServer = ServerSocket(49210, 16, InetAddress.getByName("127.0.0.1"))
