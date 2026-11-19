@@ -398,6 +398,8 @@ class FloatingBubbleService : Service() {
             enterStandbyMode()
         }
 
+        /* FCM_RESYNC_ON_TOKEN */
+        DzFcmMessagingService.syncCurrentToken(this)
         triggerFetch(forceExpandOnFirstLoad = shouldExpand)
         return START_NOT_STICKY
     }
@@ -571,6 +573,7 @@ class FloatingBubbleService : Service() {
                                 if (forcePopup) {
                                     exitStandbyAndExpand()
                                 }
+                                DzFcmMessagingService.syncCurrentToken(this)
                                 triggerFetch(forceExpandOnFirstLoad = forcePopup)
                             }
 
@@ -859,6 +862,7 @@ class FloatingBubbleService : Service() {
 
                     lastKnownStation = data.station
                     lastKnownStatusTitle = data.statusTitle
+                    if (trackingToken.isNotBlank() && trackingToken != "latest") { DzFcmMessagingService.syncCurrentToken(this@FloatingBubbleService) }
 
                     prefs.edit()
                         .putString("last_token", trackingToken)
