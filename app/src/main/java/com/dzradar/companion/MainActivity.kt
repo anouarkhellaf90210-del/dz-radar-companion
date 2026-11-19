@@ -197,7 +197,7 @@ class MainActivity : Activity() {
 
         val slug = data.getQueryParameter("slug")
         if (!slug.isNullOrBlank() && host != "merchant") {
-            prefs.putString("last_store_url", "https://my-private-store-app.vercel.app/s/${slug.trim()}")
+            prefs.putString("last_store_url", "https://elitemarketdz.top/s/${slug.trim()}")
         }
 
         prefs.apply()
@@ -210,8 +210,8 @@ class MainActivity : Activity() {
 
     private fun getSavedStoreUrl(): String {
         return getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
-            .getString("last_store_url", "https://my-private-store-app.vercel.app/s/dzball")
-            ?: "https://my-private-store-app.vercel.app/s/dzball"
+            .getString("last_store_url", "https://elitemarketdz.top")
+            ?: "https://elitemarketdz.top"
     }
 
     private fun hasOverlayPermission(): Boolean {

@@ -23,8 +23,8 @@ class BootReceiver : BroadcastReceiver() {
             val isTerminal = prefs.getBoolean("is_order_terminal", false)
             val hasActiveCustomerOrder = token.isNotBlank() && token != "latest" && token != "SENTINEL-IDLE" && token != "DEMO-TRACK-DZ" && !isTerminal
             if (mode != "merchant" && !hasActiveCustomerOrder) return
-            val storeUrl = prefs.getString("last_store_url", "https://my-private-store-app.vercel.app/s/dzball")
-                ?: "https://my-private-store-app.vercel.app/s/dzball"
+            val storeUrl = prefs.getString("last_store_url", "https://elitemarketdz.top")
+                ?: "https://elitemarketdz.top"
 
             val srvIntent = Intent(context, FloatingBubbleService::class.java).apply {
                 putExtra("mode", mode)
