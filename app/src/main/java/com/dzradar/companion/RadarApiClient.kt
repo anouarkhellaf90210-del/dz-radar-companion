@@ -31,8 +31,8 @@ object RadarApiClient {
     @Volatile var realtimeUrl: String = ""
     @Volatile var realtimeKey: String = ""
     @Volatile var lastStoreId: String = ""
-    @Volatile var baseOrigin: String = "https://my-private-store-app.vercel.app"
-    @Volatile var latestStoreUrl: String = "https://my-private-store-app.vercel.app/s/dzball"
+    @Volatile var baseOrigin: String = "https://elitemarketdz.top"
+    @Volatile var latestStoreUrl: String = "https://elitemarketdz.top/s/dzball"
 
     fun updateOriginFromStoreUrl(url: String) {
         if (url.startsWith("http")) {

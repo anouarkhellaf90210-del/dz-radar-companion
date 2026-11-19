@@ -20,6 +20,9 @@ class BootReceiver : BroadcastReceiver() {
             val mode = prefs.getString("radar_mode", "customer") ?: "customer"
             val slug = prefs.getString("merchant_slug", "latest") ?: "latest"
             val token = prefs.getString("last_token", "latest") ?: "latest"
+            val isTerminal = prefs.getBoolean("is_order_terminal", false)
+            val hasActiveCustomerOrder = token.isNotBlank() && token != "latest" && token != "SENTINEL-IDLE" && token != "DEMO-TRACK-DZ" && !isTerminal
+            if (mode != "merchant" && !hasActiveCustomerOrder) return
             val storeUrl = prefs.getString("last_store_url", "https://my-private-store-app.vercel.app/s/dzball")
                 ?: "https://my-private-store-app.vercel.app/s/dzball"
 

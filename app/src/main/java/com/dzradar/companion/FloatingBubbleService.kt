@@ -73,13 +73,21 @@ class FloatingBubbleService : Service() {
         }
     }
 
+    @Volatile private var lastScreenWakeFetchMs: Long = 0L
+    @Volatile private var consecutiveNullFetches: Int = 0
+
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == Intent.ACTION_SCREEN_OFF) {
                 isScreenOn = false
+                try { realtimeClient.stop() } catch (_: Exception) {}
             } else if (intent?.action == Intent.ACTION_SCREEN_ON || intent?.action == Intent.ACTION_USER_PRESENT) {
                 isScreenOn = true
-                triggerFetch()
+                val nowMs = System.currentTimeMillis()
+                if (nowMs - lastScreenWakeFetchMs >= 15000L) {
+                    lastScreenWakeFetchMs = nowMs
+                    triggerFetch()
+                }
             }
         }
     }
@@ -88,7 +96,7 @@ class FloatingBubbleService : Service() {
         override fun run() {
             if (isRunning) {
                 triggerFetch()
-                handler.postDelayed(this, if (realtimeClient.isConnected) 300000L else 90000L)
+                handler.postDelayed(this, if (realtimeClient.isConnected) 600000L else 300000L)
             }
         }
     }
@@ -246,8 +254,9 @@ class FloatingBubbleService : Service() {
                     setReferenceCounted(false)
                 }
             }
+            /* QUOTA_SHIELD_PATHWAY_A */
             if (wakeLock?.isHeld == false) {
-                wakeLock?.acquire()
+                wakeLock?.acquire(5000L)
             }
         } catch (_: Exception) {}
     }
@@ -362,7 +371,7 @@ class FloatingBubbleService : Service() {
                 prefs.edit().putInt("last_known_station", 0).putString("last_known_status_title", "").apply()
             }
             trackingToken = cleanIncoming
-            prefs.edit().putString("last_token", trackingToken).apply()
+            prefs.edit().putString("last_token", trackingToken).putBoolean("is_order_terminal", false).apply()
         } else {
             val saved = prefs.getString("last_token", "latest") ?: "latest"
             trackingToken = if (saved == "SENTINEL-IDLE" || saved == "DEMO-TRACK-DZ") "latest" else saved
@@ -390,7 +399,7 @@ class FloatingBubbleService : Service() {
         }
 
         triggerFetch(forceExpandOnFirstLoad = shouldExpand)
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun resolveDestinationUrl(): String {
@@ -637,7 +646,14 @@ class FloatingBubbleService : Service() {
                 startActivity(browserIntent)
             },
             onKillCompanion = {
-                enterStandbyMode()
+                val p = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE)
+                val isTerm = p.getBoolean("is_order_terminal", false)
+                if (radarMode != "merchant" && (isTerm || trackingToken.isBlank() || trackingToken == "latest")) {
+                    try { realtimeClient.stop() } catch (_: Exception) {}
+                    stopSelf()
+                } else {
+                    enterStandbyMode()
+                }
             },
             onHideOverlay = {
                 enterStandbyMode()
@@ -763,20 +779,14 @@ class FloatingBubbleService : Service() {
         startLocalLoopbackBridge()
         handler.post(pollingRunnable)
 
-        backgroundScheduler = Executors.newSingleThreadScheduledExecutor()
-        backgroundScheduler?.scheduleAtFixedRate({
-            try {
-                if (isRunning) {
-                    triggerFetch()
-                }
-            } catch (_: Exception) {}
-        }, 5, 180, TimeUnit.SECONDS)
+        // Item 6: Redundant 180s backgroundScheduler removed; pollingRunnable handles fallback.
     }
 
     private fun triggerFetch(forceExpandOnFirstLoad: Boolean = false) {
         /* QUOTA_SHIELD_SCREEN_IDLE */
         if (!forceExpandOnFirstLoad && !isScreenOn) return
-        if (!forceExpandOnFirstLoad && radarMode != "merchant" && (trackingToken.isBlank() || trackingToken == "latest" || trackingToken == "SENTINEL-IDLE")) return
+        val isTermSaved = getSharedPreferences("dz_radar_prefs", Context.MODE_PRIVATE).getBoolean("is_order_terminal", false)
+        if (!forceExpandOnFirstLoad && radarMode != "merchant" && (isTermSaved || consecutiveNullFetches >= 3 || trackingToken.isBlank() || trackingToken == "latest" || trackingToken == "SENTINEL-IDLE")) return
         if (!forceExpandOnFirstLoad && !isFetching.compareAndSet(false, true)) {
             return
         }
@@ -828,7 +838,8 @@ class FloatingBubbleService : Service() {
                 if (RadarApiClient.realtimeUrl.isNotBlank() && tokenToFetch != "latest") {
                     realtimeClient.ensureStarted(RadarApiClient.realtimeUrl, RadarApiClient.realtimeKey, "tracking_token=eq." + tokenToFetch)
                 }
-                val data = RadarApiClient.fetchOrder(tokenToFetch) ?: (if (tokenToFetch != "latest") RadarApiClient.fetchOrder("latest") else null)
+                val data = RadarApiClient.fetchOrder(tokenToFetch)
+                if (data == null) { consecutiveNullFetches++; return@Thread } else { consecutiveNullFetches = 0 }
                 if (data != null) {
                     val savedStation = if (lastKnownStation != 0) lastKnownStation else prefs.getInt("last_known_station", 0)
                     val savedTitle = if (lastKnownStatusTitle.isNotBlank()) lastKnownStatusTitle else (prefs.getString("last_known_status_title", "") ?: "")
@@ -855,6 +866,12 @@ class FloatingBubbleService : Service() {
                         .putString("last_known_status_title", lastKnownStatusTitle)
                         .apply()
 
+                    if (data.station >= 4) {
+                        prefs.edit().putBoolean("is_order_terminal", true).apply()
+                        try { realtimeClient.stop() } catch (_: Exception) {}
+                    } else {
+                        prefs.edit().putBoolean("is_order_terminal", false).apply()
+                    }
                     if (isEmergenceNeeded) {
                         exitStandbyAndExpand(data)
                     } else {
