@@ -28,6 +28,8 @@ class SupabaseRealtimeClient(
     private var workerThread: Thread? = null
 
     fun ensureStarted(supabaseUrl: String, anonKey: String, filter: String) {
+        /* PURE_FCM_ZERO_REALTIME */
+        return
         if (supabaseUrl.isBlank() || anonKey.isBlank() || filter.isBlank()) return
         if (running.get() && currentUrl == supabaseUrl && currentKey == anonKey && currentFilter == filter) {
             return
