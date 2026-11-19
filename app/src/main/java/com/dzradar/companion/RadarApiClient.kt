@@ -54,6 +54,7 @@ object RadarApiClient {
             val endpoint = "$baseOrigin/api/orders/track/$encodedToken?fresh=1&t=${System.currentTimeMillis()}"
             val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
+                setRequestProperty("X-Dz-App-Ver", "2")
                 instanceFollowRedirects = true
                 setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) DzRadar/2.0")
                 setRequestProperty("Accept", "application/json")
@@ -173,6 +174,7 @@ object RadarApiClient {
             val endpoint = "$baseOrigin/api/merchant/companion?slug=$encodedSlug$actionPart"
             val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
+                setRequestProperty("X-Dz-App-Ver", "2")
                 connectTimeout = 5000
                 readTimeout = 5000
             }
